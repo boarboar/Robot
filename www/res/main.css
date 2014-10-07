@@ -1,0 +1,180 @@
+#container{
+position:relative;
+width: 910px;
+height: 680px;
+border: 1px red dotted;
+}
+
+.outer {
+	border: 5px  #ccc outset; 
+	border-radius:4px;
+	margin: 0;
+	background-color: #bbb;
+	background-image: url(metal.png);	
+}
+
+.inner {
+	border: 5px  #ccc inset; 
+	border-radius:4px;
+	margin: 0;
+	background-color: #888;
+	background: url(noise.png);
+}
+
+.centered {
+	position: absolute;
+	margin-left: auto;
+	margin-right: auto;	
+}
+
+.padded {
+	left: 10px;
+	right: 10px;
+	top: 10px;
+	bottom: 10px;
+}
+
+.padded_0 {
+	left: 10px;
+	right: 10px;
+	top: 2px;
+	bottom: 10px;
+}
+/*
+.padded_1 {
+	left: 4px;
+	right: 4px;
+	top: 10px;
+	bottom: 10px;
+}
+*/
+
+.padded_screw {
+	left: 	0px;
+	right: 	0px;
+	top: 	0px;
+	bottom: 0px;
+	margin: 0;
+	background: url(screw.png) left top no-repeat, url(screw.png) left bottom no-repeat, url(screw.png) right top no-repeat, url(screw.png) right bottom no-repeat;
+}
+
+.bplace {
+	background:#444;
+	border-radius:2px;
+	box-shadow: 2px 2px 2px 2px #444;
+	padding: 2px;
+}
+
+.push_button{
+	position:relative;
+	width:42px;
+	height:21px;
+	color:#000;
+	display:block;
+	text-decoration:none;
+	margin:0 auto;
+	border-radius:5px;
+	border:solid 1px #aaa;
+	background:#ccc;
+	text-align:center;
+	padding:6px 8px;	
+	/*transition: all 0.1s;*/
+	box-shadow: 0px 4px 0px #888;
+	font-family:arial;
+	font-size:15px;
+	font-weight:bold;
+	font-style:italic;
+	text-shadow: rgb(224, 224, 224) 1px 1px 0px;
+	background-image: url(button1.png);
+}
+.push_button:active , .activated {
+    box-shadow: 0px 2px 0px #888;
+    position:relative;
+    top:4px;
+}
+.p_lab{	
+	font-family:arial;
+	font-size:18px;
+	font-weight:bold;	
+	text-shadow: rgb(224, 224, 224) 1px 1px 0px;
+	float: right;
+	width:70px;
+}
+.p_val{
+	border: 2px  #ccc inset; 
+	border-radius:4px;
+	/*margin: 0;*/
+	font-family:arial;
+	font-size:18px;
+	font-weight:bold;	
+	background-color: black;
+	color: green;	
+	width:70px;
+	/*
+	left: 30px;
+	overflow: hidden;
+	*/
+}
+
+.p_val_alr {
+	color: red;
+}
+
+.p_noborder{
+	border: 0px;
+	margin: 0;
+	padding: 0;
+}
+
+canvas {
+    padding-left: 0;
+    padding-right: 0;
+    margin-left: auto;
+    margin-right: auto;
+    display: block;
+}
+/*
+td {
+  	border-style: dashed;
+    border-width: 1px;
+    border-color: green;
+}
+	*/	
+#camera_outer {
+	width: 670px;
+    height: 510px;	
+	position:absolute;
+	top:0px;
+	left:0px;	
+}
+#camera {
+	background-color: #888;
+}
+
+#panel{
+	width: 220px;
+    height: 340px;
+	position:absolute;
+	top:0;
+	right:0px;		
+}
+#controls{
+	width: 220px;
+    height: 160px;
+	position:absolute;
+	right:0px;
+	top:350px;
+}
+#log_outer{
+	width: 900px;
+    height: 150px;
+	position:absolute;
+	right:0px;
+	bottom:0px;
+}	
+#log {
+	background-color: black;
+	color: green;	
+	font-family:courier;
+	font-size:15px;
+}	
