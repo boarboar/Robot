@@ -1,7 +1,7 @@
 
 // TODO
-// play with CYCLE_TIMEOUT (increase)
-// play with immediate notify
+// fix RATE_SAMPLE_PERIOD inconsistency
+// at setup - eat garbadge from serial input
 
 //#define TTY_SPEED 38400
 #define TTY_SPEED 9600
@@ -13,8 +13,8 @@ byte bytes = 0;
 // common vars //
 const unsigned int CYCLE_TIMEOUT = 100;
 const unsigned int PID_TIMEOUT = 400;
-const unsigned int CMD_TIMEOUT = 10000; //600
-const unsigned int RATE_SAMPLE_PERIOD = 400;
+const unsigned int CMD_TIMEOUT = 1000; 
+const unsigned int RATE_SAMPLE_PERIOD = 400; // ????????????????????  SHOULD BE 1000 ??????????
 
 unsigned long lastCommandTime;
 unsigned long lastCycleTime;
@@ -38,7 +38,7 @@ uint8_t trg_rate[2]={0,0};
 
 uint8_t enc_cnt[2]={0,0}; 
 uint8_t last_enc_rate[2]={0,0}; 
-uint8_t calib_enc_rate=0; 
+uint8_t calib_enc_rate=0; // target rate (counts per RATE_SAMPLE_PERIOD) for 100 power
 
 int8_t last_err[2]={0,0};
 int8_t int_err[2]={0,0};
@@ -126,6 +126,7 @@ void setup()
   digitalWrite(RED_LED, HIGH);  
   
     // test sequence
+    /*
   IsDrive=1; Drive(1, 254, 1, 170);   
   delay(500);
   StopDrive();
@@ -134,22 +135,30 @@ void setup()
   delay(500);
   digitalWrite(RED_LED, LOW);  
   StopDrive();
+  
   delay(100);  
   digitalWrite(RED_LED, HIGH);  
   IsDrive=1; Drive(2, 180, 2, 180);
   delay(500);
   StopDrive();
+  */
   
   // calibration sequence
   lastCommandTime=millis();
-  enc_cnt[0]=enc_cnt[1]=0;  
+  //enc_cnt[0]=enc_cnt[1]=0;  
   IsDrive=1; Drive(1, M_POW_HIGH, 1, M_POW_HIGH);
-  delay(1000);
+  //delay(1000);
+  delay(RATE_SAMPLE_PERIOD);
+  enc_cnt[0]=enc_cnt[1]=0;  
+  delay(RATE_SAMPLE_PERIOD);
+  calib_enc_rate = (enc_cnt[0]+enc_cnt[1])/2;
   StopDrive();
-  calib_enc_rate = (last_enc_rate[0]+last_enc_rate[1])/2;
+//calib_enc_rate = (last_enc_rate[0]+last_enc_rate[1])/2; // calib period = 1 sec- SHOULD BE RATE_SAMPLE_PERIOD !!!
+  
   digitalWrite(RED_LED, LOW);
 
   //calib_enc_rate = 18;  // !!!  
+  
   enc_state[0]=digitalRead(ENC1_IN);  
   enc_state[1]=digitalRead(ENC2_IN);      
   
@@ -211,33 +220,24 @@ void loop()
 }
 
 void Notify() {
-  //Serial.print("RET:"); Serial.print(cmdResult); Serial.print(":");
-  addJson("R", cmdResult);
+  addJson("Q", cmdResult);
   switch(cmdResult) {
     case EnumCmdDrive: 
     case EnumCmdContinueDrive:     
-    /*
-      Serial.print(drv_dir[0]);Serial.print(","); Serial.print(cmd_power[0]);Serial.print(";");
-      Serial.print(drv_dir[1]);Serial.print(","); Serial.print(cmd_power[1]);Serial.print(";");
-      Serial.print(trg_rate[0]);Serial.print(","); Serial.print(trg_rate[1]);Serial.print(";");
-      Serial.print(cur_power[0]);Serial.print(","); Serial.print(cur_power[1]);
-      */
-      //addJson("DL", drv_dir[0]); addJson("DR", drv_dir[0]);
-      addJsonArr8U("D", drv_dir); addJsonArr8U("C", cmd_power); addJsonArr8U("T", trg_rate); addJsonArr8U("P", cur_power);
+    case EnumCmdStop:
+      addJsonArr8U("D", drv_dir); addJsonArr8U("C", cmd_power); addJsonArr8U("T", trg_rate); addJsonArr8U("P", cur_power); addJsonArr8U("R", last_enc_rate);
       break; 
-    case EnumCmdTest: 
+    case EnumCmdTest:       
+      addJson("TB", calib_enc_rate); addJson("TD", last_dur); addJsonArr8U("R", last_enc_rate); addJsonArr8U("EC", enc_cnt);
+      /*
       Serial.print(last_dur); Serial.print(";"); Serial.print(enc_cnt[0]);Serial.print(","); Serial.print(enc_cnt[1]);Serial.print(";"); 
       Serial.print(last_enc_rate[0]);Serial.print(","); Serial.print(last_enc_rate[1]);Serial.print(";"); 
       Serial.print(calib_enc_rate);
-      break;
-    case EnumCmdStop:
-    /*
-      Serial.print(cur_power[0]);Serial.print(","); Serial.print(cur_power[1]);Serial.print(";");
-      Serial.print(last_dur);Serial.print(","); 
-      Serial.print(last_enc_rate[0]);Serial.print(","); Serial.print(last_enc_rate[1]); 
       */
-      addJsonArr8U("P", cur_power);
       break;
+//    case EnumCmdStop:
+//      addJsonArr8U("P", cur_power);
+//      break;
     case EnumCmdLog: {
       Serial.print(pid_log_cnt);Serial.print(";");
       for(uint8_t i=0; i<PID_LOG_SZ; i++) {
@@ -418,6 +418,7 @@ void encodeInterrupt_2() {
   uint8_t v=digitalRead(ENC2_IN);
   //if(enc_state[1]==v) return;
   //enc_state[1]=v;
+  
   if(es2==v) return;
   es2=v;
   

@@ -9,6 +9,13 @@
 <script src="res/jquery.terminal-0.8.8.min.js" type="text/javascript"></script>    
 <script src="res/gauge.min.js" type="text/javascript"></script>    
 <script type="text/javascript">
+/* Changelog
+10/11/2014
+
+1. STOP timeout changed from 100 to 0
+2. Turn left/right - power reduced from 100 to 80
+
+*/
 var term;
 var gauge_PL, gauge_PR;
 var gauge_RL, gauge_RR;
@@ -16,7 +23,7 @@ var iid=0;
 var lastcode=0;
 var lasttime=0;
 var indrive=0;
-//var incall=0;
+
 var buffer = new Buffer(taskHandler);
 
 // command queue implementation
@@ -37,7 +44,6 @@ function Buffer(handler) {
              }
         }
         // give the first item in the queue & the callback to the handler
-        //handler(queue.shift(), callback); // nope, remove only after the excution!
 		handler(queue[0], callback);
     } 
 
@@ -45,14 +51,14 @@ function Buffer(handler) {
     // we run the task.
     this.append = function(task, doStop) {
 		if(doStop==1) { // clean the queue
-			term.echo("[[;magenta;]STOP COMMAND!!!]"); 
-			if (queue.length >= 1) queue=[queue[0]];			
+			//term.echo("[[;magenta;]STOP COMMAND!!!]"); 
+			if (queue.length >= 1) queue=[queue[0]]; // clear the queue except of the head (being executed already)			
 		}
         queue.push(task);		
         if (queue.length === 1) {
-			term.echo("[[;blue;]IMMED!!!]");
+			//term.echo("[[;blue;]IMMED!!!]");
             run();
-        } else term.echo("[[;yellow;]QUEUED!!!]");
+        } /*else { term.echo("[[;yellow;]QUEUED!!!]"); }*/
     }
 
 }
@@ -117,38 +123,12 @@ function dispIntVal(id, val, lo, hi, g) {
 
 function onAjaxSuccess(data)
 {
-  //incall--;	
   term.echo(JSON.stringify(data));
   dispIntVal("#PL", data.PL, 30, 200, gauge_PL); 
   dispIntVal("#PR", data.PR, 30, 200, gauge_PR);
   dispIntVal("#RL", data.RL, 10, 400, gauge_RL);
   dispIntVal("#RR", data.RR, 10, 400, gauge_RR);
  }
-
- /*
-function postcmd(cs) {
-	//term.echo(cs);
-
-	//$.post("http://localhost:8080/WT2/directURL",{SERIAL_DATA: cs}, onAjaxSuccess).error(function(q,s,e) { term.error("Ajax "+s+" "+e); });
-    //$.get("/cgi-bin/testcmd.cgi",{SERIAL_DATA: cs}, onAjaxSuccess).error(function(q,s,e) { term.error("Ajax "+s+" "+e); });	
-
-	
-	if(incall>0) {
-		term.echo("[[;yellow;]DEFERRED!!!]");
-		return;
-	}
-	incall++;
-	//$.get("http://localhost:8080/WT2/directURL",{SERIAL_DATA: cs}, onAjaxSuccess)	
-	//$.get("/cgi-bin/testcmd.cgi",{SERIAL_DATA: cs}, onAjaxSuccess)
-	$.get("http://localhost:8080/WT2/directURL",{SERIAL_DATA: cs}, function(data) {
-		incall--;	
-		onAjaxSuccess(data); }
-	)	
-	.error(function(q,s,e) { incall--; term.error("Ajax "+s+" "+e); });		
-	
-	//buffer.append(new Task("http://localhost:8080/WT2/directURL", cs));
-}
-*/
 
 function execcmd(code) {
 	// exec
@@ -161,12 +141,14 @@ function execcmd(code) {
 	var doStop=0;
 	switch(code.toString()) {
 		case '87':cmd="DrvLR=100,100"; break;
-		case '65':cmd="DrvLR=-100,100"; break;
+		//case '65':cmd="DrvLR=-100,100"; break;
+		case '65':cmd="DrvLR=0,60"; break;
 		case '83':cmd="DrvLR=-100,-100"; break;
-		case '68':cmd="DrvLR=100,-100"; break;
+		//case '68':cmd="DrvLR=100,-100"; break;
+		case '68':cmd="DrvLR=60,0"; break;
 		case '90':cmd="DrvLR=0,0"; indrive=0; doStop=1; break;
-		case '188':cmd="DrvLR=0,100"; break;
-		case '190':cmd="DrvLR=100,0"; break;
+		case '188':cmd="DrvLR=-100,100"; break;
+		case '190':cmd="DrvLR=100,-100"; break;
 		case '84':cmd="Test"; indrive=0; break;
 		case '76':cmd="Log"; indrive=0; break;
 		default: cmd="?"; indrive=0; break;
@@ -175,8 +157,9 @@ function execcmd(code) {
 		term.error("unknown cmd "+code);
 		return;
 	}	
-	//postcmd(cmd);
-	buffer.append(new Task("http://localhost:8080/WT2/directURL", cmd), doStop);
+	// put into the queue
+	//buffer.append(new Task("http://localhost:8080/WT2/directURL", cmd), doStop);
+	buffer.append(new Task("/cgi-bin/testcmd.cgi", cmd), doStop);
 }
 
 function cmd(code, op) {
@@ -188,7 +171,8 @@ function cmd(code, op) {
 	}
 	if(op===0) {
 		clearInterval(iid);			
-		if(indrive===1) setTimeout(function() {execcmd(90);}, 100); // stop cmd // 400 to test		
+		//if(indrive===1) setTimeout(function() {execcmd(90);}, 100); // stop cmd // 400 to test		
+		if(indrive===1) setTimeout(function() {execcmd(90);}, 0); // stop cmd 
 		lastcode=0;	
 		return;
 	}
@@ -239,7 +223,8 @@ $(function(){
 	term.echo("Setting ajax...");
 	$.ajaxSetup({type: 'POST',timeout: 5000,dataType: 'json'});
 	term.echo("Getting video stream...");
-	$("#camera_view").attr("src", 'http://88.53.197.250/axis-cgi/mjpg/video.cgi?resolution=320x240');
+	//$("#camera_view").attr("src", 'http://88.53.197.250/axis-cgi/mjpg/video.cgi?resolution=320x240');
+	$("#camera_view").attr("src", "http://" + document.location.host + ":8080/?action=stream");
 	term.echo("READY!");
 });
 </script>
@@ -250,6 +235,7 @@ $(function(){
 <div class="inner centered padded" id=camera>
 <img id=camera_view height="100%" width="100%"></img> 
 </div>
+<div class="inner centered padded OSD" id=OSD>OSD</div>
 </div>
 <div class=outer id=panel>
 <div class="centered padded_screw">
