@@ -1,70 +1,10 @@
 
 // TODO
-// fix RATE_SAMPLE_PERIOD inconsistency
-// at setup - eat garbadge from serial input
+// increase calibration period!!! - DONE
+// DrvLR -> DLR
 
 //#define TTY_SPEED 38400
 #define TTY_SPEED 9600
-
-#define BUF_SIZE 20
-byte buf[BUF_SIZE];
-byte bytes = 0;
-
-// common vars //
-const unsigned int CYCLE_TIMEOUT = 100;
-const unsigned int PID_TIMEOUT = 400;
-const unsigned int CMD_TIMEOUT = 1000; 
-const unsigned int RATE_SAMPLE_PERIOD = 400; // ????????????????????  SHOULD BE 1000 ??????????
-
-unsigned long lastCommandTime;
-unsigned long lastCycleTime;
-unsigned long lastPidTime;
-
-uint16_t last_dur=0;
-
-enum EnumCmd { EnumCmdDrive=1, EnumCmdTest, EnumCmdStop, EnumCmdLog, EnumCmdContinueDrive };  
-enum EnumError { EnumErrorUnknown=-1, EnumErrorBadSyntax=-2, EnumErrorBadParam=-3, EnumErrorNone=-100};  
-
-uint16_t test_enc_cnt[2]={0,0}; 
-uint16_t test_prev_enc_cnt[2]={0,0}; 
-
-
-int8_t cmdResult=EnumErrorNone;
-
-uint8_t drv_dir[2]={0,0}; 
-uint8_t cur_power[2]={0,0}; 
-uint8_t cmd_power[2]={0,0}; 
-uint8_t trg_rate[2]={0,0}; 
-
-uint8_t enc_cnt[2]={0,0}; 
-uint8_t last_enc_rate[2]={0,0}; 
-uint8_t calib_enc_rate=0; // target rate (counts per RATE_SAMPLE_PERIOD) for 100 power
-
-int8_t last_err[2]={0,0};
-int8_t int_err[2]={0,0};
-
-#define PID_LOG_SZ 10
-uint8_t pid_log_cnt=0;
-uint8_t pid_log_ptr=0;
-uint8_t pid_log_idx[PID_LOG_SZ];
-uint8_t pid_log_rate[PID_LOG_SZ][2];
-//int8_t pid_log_err[PID_LOG_SZ][2];
-//int8_t pid_log_derr[PID_LOG_SZ][2];
-//int8_t pid_log_ierr[PID_LOG_SZ][2];
-uint8_t pid_log_pow[PID_LOG_SZ][2];
-
-#define M_POW_LOW   50
-#define M_POW_HIGH 150
-#define M_POW_MAX  254
-
-#define M_PID_KP   1
-
-// flags - TODO - bitfield
-boolean needNotify=0;
-boolean IsDrive = false;
-uint8_t enc_state[2]={0,0};
-
-//uint8_t green_st=0; 
 
 #define M1_OUT_1  P1_3
 #define M1_OUT_2  P1_4
@@ -94,6 +34,69 @@ uint8_t enc_state[2]={0,0};
 #define ENC1_IN  P1_5
 #define ENC2_IN  P2_0
 
+// common vars //
+const unsigned int CYCLE_TIMEOUT = 100;
+const unsigned int PID_TIMEOUT = 400;
+const unsigned int CMD_TIMEOUT = 1500; 
+const unsigned int RATE_SAMPLE_PERIOD = 400;
+const unsigned int WHEEL_CHGSTATES = 44;
+const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
+
+#define M_POW_LOW   50
+//#define M_POW_HIGH 150
+#define M_POW_HIGH 175
+#define M_POW_MAX  254
+
+#define M_PID_KP   1
+#define M_PID_KI   1
+
+#define BUF_SIZE 20
+byte buf[BUF_SIZE];
+byte bytes = 0;
+
+unsigned long lastCommandTime;
+unsigned long lastCycleTime;
+unsigned long lastPidTime;
+
+uint16_t last_dur=0;
+
+enum EnumCmd { EnumCmdDrive=1, EnumCmdTest, EnumCmdStop, EnumCmdLog, EnumCmdContinueDrive };  
+enum EnumError { EnumErrorUnknown=-1, EnumErrorBadSyntax=-2, EnumErrorBadParam=-3, EnumErrorNone=-100};  
+
+//uint16_t test_enc_cnt[2]={0,0}; 
+//uint16_t test_prev_enc_cnt[2]={0,0}; 
+
+
+int8_t cmdResult=EnumErrorNone;
+
+uint8_t drv_dir[2]={0,0}; 
+uint8_t cur_power[2]={0,0}; 
+uint8_t cmd_power[2]={0,0}; 
+uint8_t trg_rate[2]={0,0}; 
+
+uint8_t enc_cnt[2]={0,0}; 
+uint8_t last_enc_rate[2]={0,0}; 
+uint8_t calib_enc_rate=0; // target rate (counts per RATE_SAMPLE_PERIOD) for 100 power
+
+int8_t last_err[2]={0,0};
+int8_t int_err[2]={0,0};
+
+#define PID_LOG_SZ 10
+uint8_t pid_log_cnt=0;
+uint8_t pid_log_ptr=0;
+uint8_t pid_log_idx[PID_LOG_SZ];
+uint8_t pid_log_rate[PID_LOG_SZ][2];
+//int8_t pid_log_derr[PID_LOG_SZ][2];
+int8_t pid_log_ierr[PID_LOG_SZ][2];
+uint8_t pid_log_pow[PID_LOG_SZ][2];
+
+
+// flags - TODO - bitfield
+//boolean needNotify=0;
+boolean IsDrive = false;
+//uint8_t green_st=0; 
+
+
 void setup()
 {
   //analogFrequency(255);
@@ -104,16 +107,10 @@ void setup()
     pinMode(ports[i], OUTPUT);
   }
   analogFrequency(100);
-  //analogFrequency(64);
-  
-  //pinMode(ENC1_IN, INPUT_PULLUP);   
   pinMode(ENC1_IN, INPUT);     
-  //attachInterrupt(ENC1_IN, encodeInterrupt_1, RISING);
-   attachInterrupt(ENC1_IN, encodeInterrupt_1, CHANGE); 
-  //pinMode(ENC2_IN, INPUT_PULLUP);
+  attachInterrupt(ENC1_IN, encodeInterrupt_1, CHANGE); 
   pinMode(ENC2_IN, INPUT);  
-  //attachInterrupt(ENC2_IN, encodeInterrupt_2, RISING);
- attachInterrupt(ENC2_IN, encodeInterrupt_2, CHANGE); 
+  attachInterrupt(ENC2_IN, encodeInterrupt_2, CHANGE); 
 
   pinMode(RED_LED, OUTPUT);     
   pinMode(GREEN_LED, OUTPUT);     
@@ -124,49 +121,26 @@ void setup()
   Serial.begin(TTY_SPEED);
   lastCommandTime = lastCycleTime = millis();  
   digitalWrite(RED_LED, HIGH);  
-  
-    // test sequence
-    /*
-  IsDrive=1; Drive(1, 254, 1, 170);   
-  delay(500);
-  StopDrive();
-  delay(100);
-  IsDrive=1; Drive(1, 170, 1, 254);
-  delay(500);
-  digitalWrite(RED_LED, LOW);  
-  StopDrive();
-  
-  delay(100);  
-  digitalWrite(RED_LED, HIGH);  
-  IsDrive=1; Drive(2, 180, 2, 180);
-  delay(500);
-  StopDrive();
-  */
-  
+   
   // calibration sequence
   lastCommandTime=millis();
-  //enc_cnt[0]=enc_cnt[1]=0;  
   IsDrive=1; Drive(1, M_POW_HIGH, 1, M_POW_HIGH);
-  //delay(1000);
-  delay(RATE_SAMPLE_PERIOD);
+  delay(RATE_SAMPLE_PERIOD*2); // warmup
   enc_cnt[0]=enc_cnt[1]=0;  
-  delay(RATE_SAMPLE_PERIOD);
-  calib_enc_rate = (enc_cnt[0]+enc_cnt[1])/2;
+  delay(RATE_SAMPLE_PERIOD*2); // calibration
+  calib_enc_rate = (enc_cnt[0]+enc_cnt[1])/4;
   StopDrive();
-//calib_enc_rate = (last_enc_rate[0]+last_enc_rate[1])/2; // calib period = 1 sec- SHOULD BE RATE_SAMPLE_PERIOD !!!
   
   digitalWrite(RED_LED, LOW);
 
   //calib_enc_rate = 18;  // !!!  
   
-  enc_state[0]=digitalRead(ENC1_IN);  
-  enc_state[1]=digitalRead(ENC2_IN);      
-  
   for(uint8_t i=0; i<PID_LOG_SZ; i++) pid_log_idx[i]=255;
         
-  test_prev_enc_cnt[0]=test_enc_cnt[0]=0;
-  test_prev_enc_cnt[1]=test_enc_cnt[1]=0;
+ // test_prev_enc_cnt[0]=test_enc_cnt[0]=0;
+ // test_prev_enc_cnt[1]=test_enc_cnt[1]=0;
   
+  while (Serial.available()) Serial.read();  // eat garbage
 }
 
 void loop()
@@ -175,7 +149,7 @@ void loop()
   if ( cycleTime < lastCycleTime) lastCycleTime=0; // wraparound   
   if ( cycleTime - lastCycleTime >= CYCLE_TIMEOUT) { // working cycle    
   
-  
+/*  
 #ifdef _DRV_DBG_
   if(test_prev_enc_cnt[0]!=test_enc_cnt[0] || test_prev_enc_cnt[1]!=test_enc_cnt[1]) {    
     Serial.print(test_enc_cnt[0]);Serial.print("("); Serial.print(test_enc_cnt[0]-test_prev_enc_cnt[0]);Serial.print("); "); 
@@ -184,7 +158,8 @@ void loop()
     test_prev_enc_cnt[1]=test_enc_cnt[1];
   }
 #endif  
-  
+*/
+
     if (IsDrive) {
       if (CheckCommandTimeout()) StopDrive();
       else { 
@@ -225,29 +200,21 @@ void Notify() {
     case EnumCmdDrive: 
     case EnumCmdContinueDrive:     
     case EnumCmdStop:
-      addJsonArr8U("D", drv_dir); addJsonArr8U("C", cmd_power); addJsonArr8U("T", trg_rate); addJsonArr8U("P", cur_power); addJsonArr8U("R", last_enc_rate);
+      addJsonArr8U("D", drv_dir); addJsonArr8U("C", cmd_power); addJsonArr8U("T", trg_rate); addJsonArr8U("P", cur_power); //addJsonArr8U("R", last_enc_rate);
+      addJson("RL", last_enc_rate[0]*WHEEL_RATIO_RPM);addJson("RR", last_enc_rate[1]*WHEEL_RATIO_RPM);
       break; 
     case EnumCmdTest:       
       addJson("TB", calib_enc_rate); addJson("TD", last_dur); addJsonArr8U("R", last_enc_rate); addJsonArr8U("EC", enc_cnt);
-      /*
-      Serial.print(last_dur); Serial.print(";"); Serial.print(enc_cnt[0]);Serial.print(","); Serial.print(enc_cnt[1]);Serial.print(";"); 
-      Serial.print(last_enc_rate[0]);Serial.print(","); Serial.print(last_enc_rate[1]);Serial.print(";"); 
-      Serial.print(calib_enc_rate);
-      */
       break;
-//    case EnumCmdStop:
-//      addJsonArr8U("P", cur_power);
-//      break;
     case EnumCmdLog: {
       Serial.print(pid_log_cnt);Serial.print(";");
       for(uint8_t i=0; i<PID_LOG_SZ; i++) {
         if(pid_log_idx[i]!=255) {
         Serial.print(pid_log_idx[i]);Serial.print(":"); 
         Serial.print(pid_log_rate[i][0]);Serial.print(","); Serial.print(pid_log_rate[i][1]);
-        //Serial.print("("); Serial.print(pid_log_err[i][0]);Serial.print(","); Serial.print(pid_log_err[i][1]); Serial.print(")"); 
         Serial.print("("); Serial.print(trg_rate[0]-pid_log_rate[i][0]);Serial.print(","); Serial.print(trg_rate[1]-pid_log_rate[i][1]); Serial.print(")"); 
         //Serial.print("("); Serial.print(pid_log_derr[i][0]);Serial.print(","); Serial.print(pid_log_derr[i][1]); Serial.print(")"); 
-        //Serial.print("("); Serial.print(pid_log_ierr[i][0]);Serial.print(","); Serial.print(pid_log_ierr[i][1]); Serial.print(")"); 
+        Serial.print("("); Serial.print(pid_log_ierr[i][0]);Serial.print(","); Serial.print(pid_log_ierr[i][1]); Serial.print(")"); 
         Serial.print(":"); Serial.print(pid_log_pow[i][0]);Serial.print(","); Serial.print(pid_log_pow[i][1]); Serial.print(";"); 
         pid_log_idx[i]=255;
         delay(10);
@@ -260,7 +227,7 @@ void Notify() {
     default:;
    }
   Serial.println();
-  needNotify=0; 
+  //needNotify=0; 
 }
 
 boolean CheckCommandTimeout()
@@ -273,8 +240,6 @@ boolean CheckCommandTimeout()
 
 void StartDrive() 
 {
-  //pid_log_cnt=0;
-  
   for(int i=0; i<2; i++) {
     if(drv_dir[i]) {
        trg_rate[i]=map(cmd_power[i], 0, 100, 0, calib_enc_rate);
@@ -288,8 +253,8 @@ void StartDrive()
     //int_err[i]=0; // ?
     //pid_log_rate[pid_log_ptr][i]=trg_rate[i];
     pid_log_rate[pid_log_ptr][i]=0;
-    //pid_log_err[pid_log_ptr][i]=-111;
-    //pid_log_derr[pid_log_ptr][i]=pid_log_ierr[pid_log_ptr][i]=0;
+    pid_log_ierr[pid_log_ptr][i]=0;
+    //pid_log_derr[pid_log_ptr][i]=0;
     pid_log_pow[pid_log_ptr][i]=cur_power[i];
   }
   pid_log_idx[pid_log_ptr]=pid_log_cnt; 
@@ -310,7 +275,6 @@ void StartDrive()
 void StopDrive() 
 {
   if(!IsDrive) return;
-  //pid_log_cnt=0;
   Drive(0, 0, 0, 0);
   IsDrive = false;
   cur_power[0]=cur_power[1]=0;
@@ -328,31 +292,32 @@ void StopDrive()
 void PID(uint16_t ctime)
 {
   if(ctime>0) {
+    /*
 #ifdef _DRV_DBG_    
     Serial.print("PID T=");Serial.print(ctime);Serial.print(", C=(");Serial.print(enc_cnt[0]);Serial.print(", ");Serial.print(enc_cnt[1]);Serial.print(")");
-#endif    
+#endif
+*/
     for(int i=0; i<2; i++) 
       last_enc_rate[i]=(uint8_t)((uint16_t)enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
-    
+  /*  
 #ifdef _DRV_DBG_    
     Serial.print(", R=(");Serial.print(last_enc_rate[0]);Serial.print(", ");Serial.print(last_enc_rate[1]);Serial.print(")");
 #endif
+*/
 
     for(int i=0; i<2; i++) {
-      //uint8_t rate = (uint8_t)(enc_cnt[i]*100/ctime);
       int8_t err = trg_rate[i]-last_enc_rate[i];
-      //int8_t err_d = err-last_err[i];
       int_err[i]=int_err[i]/2+err;
-      int16_t pow=cur_power[i]+err*M_PID_KP;
+      //int16_t pow=cur_power[i]+err*M_PID_KP;
+      int16_t pow=cur_power[i]+err*M_PID_KP+int_err[i]*M_PID_KI;
       if(pow<0) pow=0;
       if(pow>M_POW_MAX) pow=M_POW_MAX;
       cur_power[i]=pow;
       last_err[i]=err;
       
       pid_log_rate[pid_log_ptr][i]=last_enc_rate[i];
-      //pid_log_err[pid_log_ptr][i]=err;
       //pid_log_derr[pid_log_ptr][i]=err_d;
-      //pid_log_ierr[pid_log_ptr][i]=int_err[i];
+      pid_log_ierr[pid_log_ptr][i]=int_err[i];
       pid_log_pow[pid_log_ptr][i]=pow;      
    
       //if(err) analogWrite(i==0 ? M1_EN : M2_EN , pow);
@@ -363,13 +328,13 @@ void PID(uint16_t ctime)
  
   enc_cnt[0]=0;
   enc_cnt[1]=0;
-
+/*
 #ifdef _DRV_DBG_
   Serial.print(", E=(");Serial.print(last_err[0]);Serial.print(", ");Serial.print(last_err[1]);Serial.print(")");
   Serial.print(", P=(");Serial.print(cur_power[0]);Serial.print(", ");Serial.print(cur_power[1]);Serial.print(")");
   Serial.println();
 #endif
-
+*/
   pid_log_idx[pid_log_ptr]=pid_log_cnt++; 
   
   if(++pid_log_ptr>=PID_LOG_SZ) pid_log_ptr=0;
@@ -403,27 +368,18 @@ volatile uint8_t es2=0;
 
 void encodeInterrupt_1() {
   uint8_t v=digitalRead(ENC1_IN);
-  //if(enc_state[0]==v) return;
-  //enc_state[0]=v;
   if(es1==v) return;
-  es1=v;
-  
-  test_enc_cnt[0]++; 
-  
- if(!IsDrive) return; 
- enc_cnt[0]++; 
+  es1=v;  
+  //test_enc_cnt[0]++;   
+  if(!IsDrive) return; 
+  enc_cnt[0]++; 
 }
 
 void encodeInterrupt_2() {
-  uint8_t v=digitalRead(ENC2_IN);
-  //if(enc_state[1]==v) return;
-  //enc_state[1]=v;
-  
+  uint8_t v=digitalRead(ENC2_IN);  
   if(es2==v) return;
-  es2=v;
-  
-    test_enc_cnt[1]++; 
-
+  es2=v;  
+  //test_enc_cnt[1]++; 
   if(!IsDrive) return;
   enc_cnt[1]++; 
 }
@@ -446,17 +402,20 @@ boolean ReadSerialCommand()
     }
     bytes++;
   }
-  if(bytes>=BUF_SIZE) bytes=0; //overflow, probably caused hang up at start...    
+  if(bytes>=BUF_SIZE) { 
+    bytes=0; //overflow, probably caused hang up at start...    
+    return true; // this is for test only... !!!!!!!!!!!!!!!!!!!!!!!!!!
+  }
   return false;
 }
 
 int8_t Parse()
-// Expect: "DrvLR=100,100"
+// Expect: "DLR=100,100"
 {  
   byte pos;
   int m;
   
-  if((pos=Match("DrvLR"))) {    
+  if((pos=Match("DLR"))) {    
     boolean chg=false;
     if(pos>=bytes || buf[pos]!='=') return EnumErrorBadSyntax;
     for(int i=0; i<2; i++) {      
@@ -482,7 +441,6 @@ int8_t Parse()
 byte Match(const char *cmd) 
 {
   byte pos=0;
-  //char *p=(char *)buf;
   while(pos<bytes && *cmd && buf[pos]==*cmd) {
     pos++;
     cmd++;

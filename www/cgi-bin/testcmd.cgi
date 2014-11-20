@@ -13,7 +13,7 @@ do
 #	echo -n '{"C":"'$_DEC'","R":"'
 	echo -n '{"C":"'$_DEC'",'	
 	(
-		read -r -t 4 < /dev/ttyATH0
+		read -r -t 1 < /dev/ttyATH0
 		echo $REPLY > /tmp/drvcon.tmp
 	) &
 	read _T1 trash < /proc/uptime
