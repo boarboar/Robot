@@ -15,14 +15,22 @@
 1. STOP timeout changed from 100 to 0
 2. Turn left/right - power reduced from 100 to 80
 
+// Note - 
+removng indrive causes stop cmd after non-drive cmds like log...
+
 */
+
+"use strict";
+
 var term;
 var gauge_PL, gauge_PR;
 var gauge_RL, gauge_RR;
 var iid=0;
 var lastcode=0;
 var lasttime=0;
-var indrive=0;
+//var lastop=0;
+var keys = [];
+//var indrive=0;
 
 var buffer = new Buffer(taskHandler);
 
@@ -133,26 +141,46 @@ function onAjaxSuccess(data)
 
 function execcmd(code) {
 	// exec
+	
 	var ms = new Date().getTime();
-	if(lastcode===code &&  (ms - lasttime) < 400) { /*term.echo("[[;yellow;]SKIP] "+code);*/ return; }
+	if(lastcode===code &&  (ms - lasttime) < 400) { 
+	//term.echo("[[;yellow;]SKIP] "+code);
+	return; }
 	lasttime=ms;
 	lastcode=code;
-	indrive=1; 
+	
+	//term.echo("[[;yellow;]KEYS:] "+keys);
+	
+//	indrive=1; 
+	// test composite:
+	if(keys[87]===1) {
+		if(keys[65]===1) code=81;
+		else if(keys[68]===1) code=69;
+		else code=87;
+		}
+	
 	var cmd="?";
 	var doStop=0;
-	switch(code.toString()) {
-		case '87':cmd="DLR=100,100"; break;
+	switch(code) {
+		case 87:cmd="DLR=100,100"; break;
 		//case '65':cmd="DLR=-100,100"; break;
-		case '65':cmd="DLR=0,60"; break;
-		case '83':cmd="DLR=-100,-100"; break;
+		case 65:cmd="DLR=-10,60"; break;
+		case 83:cmd="DLR=-100,-100"; break;
 		//case '68':cmd="DLR=100,-100"; break;
-		case '68':cmd="DLR=60,0"; break;
-		case '90':cmd="DLR=0,0"; indrive=0; doStop=1; break;
-		case '188':cmd="DLR=-100,100"; break;
-		case '190':cmd="DLR=100,-100"; break;
-		case '84':cmd="Test"; indrive=0; break;
-		case '76':cmd="Log"; indrive=0; break;
-		default: cmd="?"; indrive=0; break;
+		case 68:cmd="DLR=60,-10"; break;
+
+		case 81:cmd="DLR=60,100"; break;
+		case 69:cmd="DLR=100,60"; break;
+		
+		case 90:cmd="DLR=0,0"; /*indrive=0;*/ doStop=1; break;
+		
+		case 188:cmd="DLR=-100,100"; break;
+		case 190:cmd="DLR=100,-100"; break;
+		
+		
+		case 84:cmd="Test"; /*indrive=0;*/ break;
+		case 76:cmd="Log"; /*indrive=0;*/ break;
+		default: cmd="?"; /*indrive=0;*/ break;
 		}
 	if(cmd==="?") {
 		term.error("unknown cmd "+code);
@@ -165,19 +193,16 @@ function execcmd(code) {
 
 function cmd(code, op) {
 	clearInterval(iid);	iid=0;	
-	if(op===2) {
-		execcmd(code);
-		iid=setInterval(function() {execcmd(code);}, 600);
-		return;
+	if(op===2) { // mousedown
+		iid=setInterval(function() {execcmd(code);}, 400);
+	} else if(op===0) { // keyup or mouseleave
+		keys[code]=0;
+		/*if(indrive===1)*/ setTimeout(function() {execcmd(90);}, 0); // stop cmd 		
 	}
-	if(op===0) {
-		clearInterval(iid);			
-		//if(indrive===1) setTimeout(function() {execcmd(90);}, 100); // stop cmd // 400 to test		
-		if(indrive===1) setTimeout(function() {execcmd(90);}, 0); // stop cmd 
-		lastcode=0;	
-		return;
+	else { // keydown
+		keys[code]=1;
+		setTimeout(function() {execcmd(code);}, 0);
 	}
-	setTimeout(function() {execcmd(code);}, 0);
 }
 
 $(function(){

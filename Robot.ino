@@ -198,7 +198,9 @@ void Notify() {
       addJson("TB", calib_enc_rate); addJson("TD", last_dur); addJsonArr8U("R", last_enc_rate); addJsonArr8U("EC", enc_cnt);
       break;
     case EnumCmdLog: {
-      Serial.print(pid_log_cnt);Serial.print(";");
+      //Serial.print(pid_log_cnt);Serial.print(";");
+      addJson("LCNT", pid_log_cnt);
+      Serial.print("\""); Serial.print("LOGR"); Serial.print("\":\"");
       for(uint8_t i=0; i<PID_LOG_SZ; i++) {
         if(pid_log_idx[i]!=255) {
         Serial.print(pid_log_idx[i]);Serial.print(":"); 
@@ -211,6 +213,7 @@ void Notify() {
         delay(10);
         }
       }
+      Serial.print("\",");
       pid_log_cnt=0;
       pid_log_ptr=0;
       break;
@@ -266,7 +269,6 @@ void StopDrive()
   IsDrive = false;
   cur_power[0]=cur_power[1]=0;
   digitalWrite(RED_LED, LOW);
-  digitalWrite(GREEN_LED, LOW);
   unsigned long n=millis();
   if(n>lastCommandTime) {
     last_dur=n-lastCommandTime;
@@ -280,29 +282,26 @@ void PID(uint16_t ctime)
 {
   if(ctime>0) {
     for(int i=0; i<2; i++) {
-      last_enc_rate[i]=(uint8_t)((uint16_t)enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    //!!!!!!!!!!!!
-      enc_cnt[i]=0; //!!!!!!!!!!!!!!!!!
+      last_enc_rate[i]=(uint8_t)((uint16_t)enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
+      enc_cnt[i]=0; 
       int8_t err = trg_rate[i]-last_enc_rate[i];
       int8_t err_d = err-last_err[i];
       int_err[i]=int_err[i]/2+err;      
-      //int16_t pow=cur_power[i]+err*M_PID_KP;
-      int16_t pow=cur_power[i]+err*M_PID_KP+int_err[i]*M_PID_KI+err_d*M_PID_KD;
+      int16_t pow=cur_power[i]+(int16_t)err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI+(int16_t)err_d*M_PID_KD;
       if(pow<0) pow=0;
       if(pow>M_POW_MAX) pow=M_POW_MAX;
+      if(err) analogWrite(i==0 ? M1_EN : M2_EN , pow); 
       cur_power[i]=pow;
       last_err[i]=err;
-      
+      // log entry
       pid_log_rate[pid_log_ptr][i]=last_enc_rate[i];
       pid_log_derr[pid_log_ptr][i]=err_d;
       pid_log_ierr[pid_log_ptr][i]=int_err[i];
       pid_log_pow[pid_log_ptr][i]=pow;      
-   
-      if(err) analogWrite(i==0 ? M1_EN : M2_EN , pow); // !!!!!!!!!!!
-    }
-  
+    } 
+  // log advance/wrap  
   pid_log_idx[pid_log_ptr]=pid_log_cnt++;   
-  if(++pid_log_ptr>=PID_LOG_SZ) pid_log_ptr=0;
-        
+  if(++pid_log_ptr>=PID_LOG_SZ) pid_log_ptr=0;        
   }
 }
 
