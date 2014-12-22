@@ -18,8 +18,9 @@
 
 // Besides, the different pins for the separate analogwrite channels should be on the separate timer+compare 
 
-//#define TTY_SPEED 38400
-#define TTY_SPEED 9600
+#define TTY_SPEED 38400
+//#define TTY_SPEED 57600
+//#define TTY_SPEED 9600
 
 /*
 // head 1
@@ -48,8 +49,11 @@
 #define ENC1_IN  P2_0
 
 // common vars //
-const unsigned int CYCLE_TIMEOUT = 100;
-const unsigned int PID_TIMEOUT = 400;
+//const unsigned int CYCLE_TIMEOUT = 100;
+//const unsigned int PID_TIMEOUT = 400;
+const unsigned int CYCLE_TIMEOUT = 50;
+const unsigned int PID_TIMEOUT = (CYCLE_TIMEOUT*4);
+const unsigned int RESP_TIMEOUT = 90;
 const unsigned int CMD_TIMEOUT = 1500; 
 const unsigned int RATE_SAMPLE_PERIOD = 400;
 const unsigned int WHEEL_CHGSTATES = 44;
@@ -159,7 +163,7 @@ void loop()
       else { 
         if ( cycleTime < lastPidTime) lastPidTime=0; // wraparound   
         uint16_t ctime = cycleTime - lastPidTime;
-        if ( ctime >= PID_TIMEOUT) { // working cycle    
+        if ( ctime >= PID_TIMEOUT) { // PID cycle    
           PID(ctime); 
           lastPidTime=cycleTime;
         }
@@ -180,7 +184,7 @@ void loop()
     }else if(cmdResult==EnumCmdStop) {
       StopDrive();
     }
-    delay(CYCLE_TIMEOUT); 
+    delay(RESP_TIMEOUT); 
     Notify(); // added 06.10.2014
   }
 }
@@ -191,7 +195,8 @@ void Notify() {
     case EnumCmdDrive: 
     case EnumCmdContinueDrive:     
     case EnumCmdStop:
-      addJsonArr8U("D", drv_dir); addJsonArr8U("C", cmd_power); addJsonArr8U("T", trg_rate); addJsonArr8U("P", cur_power); //addJsonArr8U("R", last_enc_rate);
+      //addJsonArr8U("D", drv_dir); addJsonArr8U("C", cmd_power); addJsonArr8U("T", trg_rate); 
+      addJsonArr8U("P", cur_power); 
       addJson("RL", last_enc_rate[0]*WHEEL_RATIO_RPM);addJson("RR", last_enc_rate[1]*WHEEL_RATIO_RPM);
       break; 
     case EnumCmdTest:       
