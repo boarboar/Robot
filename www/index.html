@@ -136,7 +136,11 @@ function onAjaxSuccess(data)
   dispIntVal("#PR", data.PR, 30, 200, gauge_PR);
   dispIntVal("#RL", data.RL, 10, 400, gauge_RL);
   dispIntVal("#RR", data.RR, 10, 400, gauge_RR);
-  if(data.Q==="2") term.echo("this was a test cmd..."); // test
+  //if(data.Q==="2") term.echo("this was a test cmd..."); // test
+  var osd='';
+  if (typeof(data.S) !== 'undefined') osd+='Speed='+data.S+' cm/s';
+  if (typeof(data.D) !== 'undefined') osd+=', Dist='+(data.D/100)+' M';
+  $("#OSD").text(osd);
  }
 
 function execcmd(code) {
@@ -246,7 +250,7 @@ $(function(){
 	gauge_PR=createGauge('gauge_PR', 254, 30, 200, ['0','50','100','150','200','250','300']);
 	gauge_RL=createGauge('gauge_RL', 200, 10, 190, ['0','50','100','150','200']);
 	gauge_RR=createGauge('gauge_RR', 200, 10, 190, ['0','50','100','150','200']);
-	
+	  
 	term.echo("Setting ajax...");
 	$.ajaxSetup({type: 'POST',timeout: 5000,dataType: 'json'});
 	term.echo("Getting video stream...");

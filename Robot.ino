@@ -48,16 +48,22 @@
 #define ENC2_IN  P1_5
 #define ENC1_IN  P2_0
 
-// common vars //
-//const unsigned int CYCLE_TIMEOUT = 100;
-//const unsigned int PID_TIMEOUT = 400;
-const unsigned int CYCLE_TIMEOUT = 50;
+// common vars 
+//const unsigned int CYCLE_TIMEOUT = 50;
+const unsigned int CYCLE_TIMEOUT = 75;
 const unsigned int PID_TIMEOUT = (CYCLE_TIMEOUT*4);
-const unsigned int RESP_TIMEOUT = 90;
+//const unsigned int RESP_TIMEOUT = 90;
+const unsigned int RESP_TIMEOUT = 1;
 const unsigned int CMD_TIMEOUT = 1500; 
 const unsigned int RATE_SAMPLE_PERIOD = 400;
 const unsigned int WHEEL_CHGSTATES = 44;
 const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
+const unsigned int WHEEL_RAD_MM = 32;
+const unsigned int WHEEL_RATIO_SMPS = (WHEEL_RAD_MM*628/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
+
+#define CHGST_TO_MM(CNT)  ((uint32_t)(CNT)*628*WHEEL_RAD_MM/WHEEL_CHGSTATES/100)
+
+// approx=30*628/400/44 = 1
 
 #define M_POW_LOW   50
 //#define M_POW_HIGH 150
@@ -65,18 +71,18 @@ const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
 #define M_POW_MAX  254
 
 //#define M_PID_KP   1
-#define M_PID_KP   3
-#define M_PID_KI   1
-#define M_PID_KD   1
+#define M_PID_KP   1
+#define M_PID_KI   0
+#define M_PID_KD   0
 
 #define BUF_SIZE 20
 byte buf[BUF_SIZE];
 byte bytes = 0;
 
-unsigned long lastCommandTime;
-unsigned long lastCycleTime;
-unsigned long lastPidTime;
-
+uint32_t lastCommandTime;
+uint32_t lastCycleTime;
+uint32_t lastPidTime;
+int32_t dist=0;
 uint16_t last_dur=0;
 
 enum EnumCmd { EnumCmdDrive=1, EnumCmdTest, EnumCmdStop, EnumCmdLog, EnumCmdContinueDrive };  
@@ -194,10 +200,21 @@ void Notify() {
   switch(cmdResult) {
     case EnumCmdDrive: 
     case EnumCmdContinueDrive:     
-    case EnumCmdStop:
+    case EnumCmdStop: {
       //addJsonArr8U("D", drv_dir); addJsonArr8U("C", cmd_power); addJsonArr8U("T", trg_rate); 
       addJsonArr8U("P", cur_power); 
       addJson("RL", last_enc_rate[0]*WHEEL_RATIO_RPM);addJson("RR", last_enc_rate[1]*WHEEL_RATIO_RPM);
+      int16_t s[2];
+      for(uint8_t i=0; i<2; i++) {         
+        if(drv_dir[i]==0) s[i]=0;
+        else {
+          s[i]=last_enc_rate[i]*WHEEL_RATIO_SMPS;
+          if(drv_dir[i]==2) s[i]=-s[i];
+        } 
+      }
+      addJson("S", (s[0]+s[1])/2);
+      addJson("D", (int16_t)(dist/10));
+      }
       break; 
     case EnumCmdTest:       
       addJson("TB", calib_enc_rate); addJson("TD", last_dur); addJsonArr8U("R", last_enc_rate); addJsonArr8U("EC", enc_cnt);
@@ -272,21 +289,29 @@ void StopDrive()
   if(!IsDrive) return;
   Drive(0, 0, 0, 0);
   IsDrive = false;
-  cur_power[0]=cur_power[1]=0;
-  digitalWrite(RED_LED, LOW);
+  digitalWrite(RED_LED, LOW);  
   unsigned long n=millis();
+  last_dur=n-lastCommandTime;
+  last_enc_rate[0]=last_enc_rate[1]=0;
+  cur_power[0]=cur_power[1]=0;
+
+  /*
   if(n>lastCommandTime) {
     last_dur=n-lastCommandTime;
     last_enc_rate[0]=(uint8_t)((uint16_t)enc_cnt[0]*RATE_SAMPLE_PERIOD/last_dur); 
     last_enc_rate[1]=(uint8_t)((uint16_t)enc_cnt[1]*RATE_SAMPLE_PERIOD/last_dur);
   }
   else { last_dur=0; last_enc_rate[0]=last_enc_rate[1]=0;}
+  */
 }
 
 void PID(uint16_t ctime)
 {
   if(ctime>0) {
+    int16_t sum_cnt=0;
     for(int i=0; i<2; i++) {
+      if(drv_dir[i]==2) sum_cnt-=enc_cnt[i];
+      else sum_cnt+=enc_cnt[i];
       last_enc_rate[i]=(uint8_t)((uint16_t)enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
       enc_cnt[i]=0; 
       int8_t err = trg_rate[i]-last_enc_rate[i];
@@ -304,6 +329,7 @@ void PID(uint16_t ctime)
       pid_log_ierr[pid_log_ptr][i]=int_err[i];
       pid_log_pow[pid_log_ptr][i]=pow;      
     } 
+  dist+=CHGST_TO_MM(sum_cnt); // dtive distance, mm  
   // log advance/wrap  
   pid_log_idx[pid_log_ptr]=pid_log_cnt++;   
   if(++pid_log_ptr>=PID_LOG_SZ) pid_log_ptr=0;        
