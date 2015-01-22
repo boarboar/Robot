@@ -140,6 +140,7 @@ function onAjaxSuccess(data)
   var osd='';
   if (typeof(data.S) !== 'undefined') osd+='Speed='+data.S+' cm/s';
   if (typeof(data.D) !== 'undefined') osd+=', Dist='+(data.D/100)+' M';
+  if (typeof(data.F) !== 'undefined') osd+=', Diff='+(data.F)+' cm';
   $("#OSD").text(osd);
  }
 

@@ -56,12 +56,14 @@ const unsigned int PID_TIMEOUT = (CYCLE_TIMEOUT*4);
 const unsigned int RESP_TIMEOUT = 1;
 const unsigned int CMD_TIMEOUT = 1500; 
 const unsigned int RATE_SAMPLE_PERIOD = 400;
-const unsigned int WHEEL_CHGSTATES = 44;
+const unsigned int WHEEL_CHGSTATES = 40;
 const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
-const unsigned int WHEEL_RAD_MM = 32;
+const unsigned int WHEEL_RAD_MM = 33;
+const unsigned int WHEEL_BASE_MM = 140; // approx... carriage base
 const unsigned int WHEEL_RATIO_SMPS = (WHEEL_RAD_MM*628/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
+#define V_NORM 10000
 
-#define CHGST_TO_MM(CNT)  ((uint32_t)(CNT)*628*WHEEL_RAD_MM/WHEEL_CHGSTATES/100)
+#define CHGST_TO_MM(CNT)  ((int32_t)(CNT)*62832*WHEEL_RAD_MM/WHEEL_CHGSTATES/10000)
 
 // approx=30*628/400/44 = 1
 
@@ -75,6 +77,7 @@ const unsigned int WHEEL_RATIO_SMPS = (WHEEL_RAD_MM*628/RATE_SAMPLE_PERIOD/WHEEL
 #define M_PID_KI   0
 #define M_PID_KD   0
 
+
 #define BUF_SIZE 20
 byte buf[BUF_SIZE];
 byte bytes = 0;
@@ -82,9 +85,17 @@ byte bytes = 0;
 uint32_t lastCommandTime;
 uint32_t lastCycleTime;
 uint32_t lastPidTime;
-int32_t dist=0;
 uint16_t last_dur=0;
 
+int32_t dist=0;
+int16_t diff=0;
+int32_t x=0, y=0;
+int32_t nx=0, ny=V_NORM;
+int32_t tx=-V_NORM, ty=0;
+/*
+float nx=0.0, ny=1.0;
+float tx=-1.0, ty=0.0;
+*/
 enum EnumCmd { EnumCmdDrive=1, EnumCmdTest, EnumCmdStop, EnumCmdLog, EnumCmdContinueDrive };  
 enum EnumError { EnumErrorUnknown=-1, EnumErrorBadSyntax=-2, EnumErrorBadParam=-3, EnumErrorNone=-100};  
 
@@ -102,7 +113,7 @@ uint8_t calib_enc_rate=0; // target rate (counts per RATE_SAMPLE_PERIOD) for 100
 int8_t last_err[2]={0,0};
 int8_t int_err[2]={0,0};
 
-#define PID_LOG_SZ 10
+#define PID_LOG_SZ 8
 uint8_t pid_log_cnt=0;
 uint8_t pid_log_ptr=0;
 uint8_t pid_log_idx[PID_LOG_SZ];
@@ -214,6 +225,9 @@ void Notify() {
       }
       addJson("S", (s[0]+s[1])/2);
       addJson("D", (int16_t)(dist/10));
+      addJson("F", (int16_t)(diff/10));
+      addJson("NX", (int16_t)nx);
+      addJson("NY", (int16_t)ny);
       }
       break; 
     case EnumCmdTest:       
@@ -287,10 +301,11 @@ void StartDrive()
 void StopDrive() 
 {
   if(!IsDrive) return;
+  unsigned long n=millis();
+  if(n>lastPidTime) PID(n-lastPidTime); // finalize
   Drive(0, 0, 0, 0);
   IsDrive = false;
   digitalWrite(RED_LED, LOW);  
-  unsigned long n=millis();
   last_dur=n-lastCommandTime;
   last_enc_rate[0]=last_enc_rate[1]=0;
   cur_power[0]=cur_power[1]=0;
@@ -308,10 +323,11 @@ void StopDrive()
 void PID(uint16_t ctime)
 {
   if(ctime>0) {
-    int16_t sum_cnt=0;
-    for(int i=0; i<2; i++) {
-      if(drv_dir[i]==2) sum_cnt-=enc_cnt[i];
-      else sum_cnt+=enc_cnt[i];
+    int16_t s[2];
+    for(uint8_t i=0; i<2; i++) {
+      if(drv_dir[i]==2) s[i]=-enc_cnt[i];
+      else s[i]=enc_cnt[i];
+      s[i]=CHGST_TO_MM(s[i]);
       last_enc_rate[i]=(uint8_t)((uint16_t)enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
       enc_cnt[i]=0; 
       int8_t err = trg_rate[i]-last_enc_rate[i];
@@ -329,7 +345,36 @@ void PID(uint16_t ctime)
       pid_log_ierr[pid_log_ptr][i]=int_err[i];
       pid_log_pow[pid_log_ptr][i]=pow;      
     } 
-  dist+=CHGST_TO_MM(sum_cnt); // dtive distance, mm  
+  if(s[0] || s[1]) {  
+    //dist+=CHGST_TO_MM((s[0]+s[1])/2); // dtive distance, mm  
+    //diff+=CHGST_TO_MM((s[0]-s[1])/2); // dtive distance, mm  
+    dist+=(s[0]+s[1])/2; // dtive distance, mm  
+    diff+=(s[0]-s[1])/2; // dtive distance, mm  
+   
+    tx += nx*(s[0]-s[1])/WHEEL_BASE_MM;
+    ty += ny*(s[0]-s[1])/WHEEL_BASE_MM;
+    nx=(nx*2+ty*4)/6;
+    ny=(ny*2-tx*4)/6;
+    uint16_t nl=isqrt32(nx*nx+ny*ny);
+    nx=nx*V_NORM/nl;  
+    ny=ny*V_NORM/nl;
+    ty=nx, tx=-ny;
+    
+    /*
+    tx += nx*(s[1]-s[0])/WHEEL_BASE_MM;
+    ty += ny*(s[1]-s[0])/WHEEL_BASE_MM;
+    nx=(2.0*nx+4.0*ty)/6.0;
+    ny=(2.0*ny-4.0*tx)/6.0;
+    float nl=sqrt(nx*nx+ny*ny);
+    nx/=nl; ny/=nl;
+    ty=nx, tx=-ny;
+*/
+/*		
+		float dx=nx*(s1+s2)/2.0;
+		float dy=ny*(s1+s2)/2.0;		
+*/
+
+  }
   // log advance/wrap  
   pid_log_idx[pid_log_ptr]=pid_log_cnt++;   
   if(++pid_log_ptr>=PID_LOG_SZ) pid_log_ptr=0;        
@@ -479,3 +524,18 @@ void addJson(const char *name, int value) {
     Serial.print("\",");
   }
  }
+ 
+ uint16_t isqrt32(uint32_t n)  
+    {  
+        uint16_t c = 0x8000;  
+        uint16_t g = 0x8000;  
+      
+        for(;;) {  
+            if((uint32_t)g*g > n)  
+                g ^= c;  
+            c >>= 1;  
+            if(c == 0)  
+                return g;  
+            g |= c;  
+        }  
+    }  
