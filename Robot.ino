@@ -128,7 +128,7 @@ uint8_t pid_log_pow[PID_LOG_SZ][2];
 struct LogRec {
   uint8_t cmd_id;
   uint8_t pid_log_idx;
-  uint8_t ctime;
+  uint16_t ctime;
   uint8_t pid_log_rate[2];
   int8_t pid_log_derr[2];
   int8_t pid_log_ierr[2];
