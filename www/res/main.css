@@ -133,7 +133,7 @@ border: 1px red dotted;
 	font-weight:bold;	
 	color: red;	
 }
-
+/*
 canvas {
     padding-left: 0;
     padding-right: 0;
@@ -141,6 +141,7 @@ canvas {
     margin-right: auto;
     display: block;
 }
+*/
 /*
 td {
   	border-style: dashed;
@@ -179,7 +180,12 @@ td {
 	position:absolute;
 	right:0px;
 	bottom:0px;
-}	
+}
+#compass{
+	position:absolute;
+	right:0px;
+	bottom:0px;
+}		
 /*
 #log {
 	background-color: black;

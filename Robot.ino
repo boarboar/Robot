@@ -51,15 +51,16 @@
 // common vars 
 //const unsigned int CYCLE_TIMEOUT = 50;
 const unsigned int CYCLE_TIMEOUT = 75;
-const unsigned int PID_TIMEOUT = (CYCLE_TIMEOUT*4);
+//const unsigned int PID_TIMEOUT = (CYCLE_TIMEOUT*4);
+const unsigned int PID_TIMEOUT = CYCLE_TIMEOUT;
 //const unsigned int RESP_TIMEOUT = 90;
 const unsigned int RESP_TIMEOUT = 1;
 const unsigned int CMD_TIMEOUT = 1500; 
 const unsigned int RATE_SAMPLE_PERIOD = 400;
 const unsigned int WHEEL_CHGSTATES = 40;
 const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
-const unsigned int WHEEL_RAD_MM = 33;
-const unsigned int WHEEL_BASE_MM = 140; // approx... carriage base
+const unsigned int WHEEL_RAD_MM = 33; // 34?
+const unsigned int WHEEL_BASE_MM = 140;// approx... carriage base 145 - too high, 135 - too low
 const unsigned int WHEEL_RATIO_SMPS = (WHEEL_RAD_MM*628/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
 #define V_NORM 10000
 
@@ -73,7 +74,7 @@ const unsigned int WHEEL_RATIO_SMPS = (WHEEL_RAD_MM*628/RATE_SAMPLE_PERIOD/WHEEL
 #define M_POW_MAX  254
 
 //#define M_PID_KP   1
-#define M_PID_KP   1
+#define M_PID_KP   2
 #define M_PID_KI   0
 #define M_PID_KD   0
 
@@ -96,7 +97,7 @@ int32_t tx=-V_NORM, ty=0;
 float nx=0.0, ny=1.0;
 float tx=-1.0, ty=0.0;
 */
-enum EnumCmd { EnumCmdDrive=1, EnumCmdTest, EnumCmdStop, EnumCmdLog, EnumCmdContinueDrive };  
+enum EnumCmd { EnumCmdDrive=1, EnumCmdTest, EnumCmdStop, EnumCmdLog, EnumCmdContinueDrive, EnumCmdRst };  
 enum EnumError { EnumErrorUnknown=-1, EnumErrorBadSyntax=-2, EnumErrorBadParam=-3, EnumErrorNone=-100};  
 
 int8_t cmdResult=EnumErrorNone;
@@ -125,7 +126,6 @@ uint8_t pid_log_pow[PID_LOG_SZ][2];
 
 // flags - TODO - bitfield
 boolean IsDrive = false;
-//uint8_t green_st=0; 
 
 
 void setup()
@@ -144,10 +144,10 @@ void setup()
   attachInterrupt(ENC2_IN, encodeInterrupt_2, CHANGE); 
 
   pinMode(RED_LED, OUTPUT);     
-  pinMode(GREEN_LED, OUTPUT);     
-  for(int i=0; i<6; i++) {
+  //pinMode(GREEN_LED, OUTPUT);     
+  for(int i=0; i<5; i++) {
     digitalWrite(RED_LED, HIGH); delay(100); digitalWrite(RED_LED, LOW); 
-    digitalWrite(GREEN_LED, HIGH); delay(100); digitalWrite(GREEN_LED, LOW);
+    //digitalWrite(GREEN_LED, HIGH); delay(100); digitalWrite(GREEN_LED, LOW);
   }
   Serial.begin(TTY_SPEED);
   lastCommandTime = lastCycleTime = millis();  
@@ -171,7 +171,7 @@ void setup()
 
 void loop()
 {
-  unsigned long cycleTime = millis();
+  uint32_t cycleTime = millis();
   if ( cycleTime < lastCycleTime) lastCycleTime=0; // wraparound   
   if ( cycleTime - lastCycleTime >= CYCLE_TIMEOUT) { // working cycle    
   
@@ -198,8 +198,13 @@ void loop()
       lastCommandTime = millis();
     } else if(cmdResult==EnumCmdContinueDrive && IsDrive) {
       lastCommandTime = millis();
-    }else if(cmdResult==EnumCmdStop) {
+    } else if(cmdResult==EnumCmdStop) {
       StopDrive();
+    } else if(cmdResult==EnumCmdRst) {
+      StopDrive();
+      x=y=0;
+      nx=0; ny=V_NORM;
+      tx=-V_NORM;ty=0;
     }
     delay(RESP_TIMEOUT); 
     Notify(); // added 06.10.2014
@@ -211,8 +216,8 @@ void Notify() {
   switch(cmdResult) {
     case EnumCmdDrive: 
     case EnumCmdContinueDrive:     
-    case EnumCmdStop: {
-      //addJsonArr8U("D", drv_dir); addJsonArr8U("C", cmd_power); addJsonArr8U("T", trg_rate); 
+    case EnumCmdStop: 
+    case EnumCmdRst: {
       addJsonArr8U("P", cur_power); 
       addJson("RL", last_enc_rate[0]*WHEEL_RATIO_RPM);addJson("RR", last_enc_rate[1]*WHEEL_RATIO_RPM);
       int16_t s[2];
@@ -228,6 +233,8 @@ void Notify() {
       addJson("F", (int16_t)(diff/10));
       addJson("NX", (int16_t)nx);
       addJson("NY", (int16_t)ny);
+      addJson("X", (int16_t)(x/10));
+      addJson("Y", (int16_t)(y/10));
       }
       break; 
     case EnumCmdTest:       
@@ -346,21 +353,33 @@ void PID(uint16_t ctime)
       pid_log_pow[pid_log_ptr][i]=pow;      
     } 
   if(s[0] || s[1]) {  
-    //dist+=CHGST_TO_MM((s[0]+s[1])/2); // dtive distance, mm  
-    //diff+=CHGST_TO_MM((s[0]-s[1])/2); // dtive distance, mm  
-    dist+=(s[0]+s[1])/2; // dtive distance, mm  
-    diff+=(s[0]-s[1])/2; // dtive distance, mm  
-   
+    dist+=(s[0]+s[1])/2; // drive distance, mm  
+    diff+=(s[0]-s[1])/2; // drive diff, mm  
+    
     tx += nx*(s[0]-s[1])/WHEEL_BASE_MM;
     ty += ny*(s[0]-s[1])/WHEEL_BASE_MM;
+/*
+// opt1 start    
+    uint16_t tl=isqrt32(tx*tx+ty*ty);
+    tx=tx*V_NORM/tl;  
+    ty=ty*V_NORM/tl;
+    nx=ty; 
+    ny=-tx;
+// opt1 end    
+ */
+   
+// opt2 start       
     nx=(nx*2+ty*4)/6;
     ny=(ny*2-tx*4)/6;
     uint16_t nl=isqrt32(nx*nx+ny*ny);
     nx=nx*V_NORM/nl;  
     ny=ny*V_NORM/nl;
-    ty=nx, tx=-ny;
+    ty=nx; tx=-ny;
+// opt2 end        
+    
     
     /*
+// float option    
     tx += nx*(s[1]-s[0])/WHEEL_BASE_MM;
     ty += ny*(s[1]-s[0])/WHEEL_BASE_MM;
     nx=(2.0*nx+4.0*ty)/6.0;
@@ -368,12 +387,12 @@ void PID(uint16_t ctime)
     float nl=sqrt(nx*nx+ny*ny);
     nx/=nl; ny/=nl;
     ty=nx, tx=-ny;
-*/
-/*		
+    
 		float dx=nx*(s1+s2)/2.0;
 		float dy=ny*(s1+s2)/2.0;		
 */
-
+    x+=(int32_t)nx*(s[0]+s[1])/(2*V_NORM);
+    y+=(int32_t)ny*(s[0]+s[1])/(2*V_NORM);
   }
   // log advance/wrap  
   pid_log_idx[pid_log_ptr]=pid_log_cnt++;   
@@ -471,6 +490,9 @@ int8_t Parse()
   }
   else if((pos=Match("Log"))) {
     return EnumCmdLog;
+  } 
+  else if((pos=Match("Rst"))) {
+    return EnumCmdRst;
   }
   else return EnumErrorUnknown;
 }
@@ -506,12 +528,12 @@ byte bctoi(byte index, int *val)
   return index;
 }
 
-void addJson(const char *name, int value) {
+ void addJson(const char *name, int value) {
   Serial.print("\"");
   Serial.print(name);
-  Serial.print("\":\"");
+  Serial.print("\":");
   Serial.print(value);
-  Serial.print("\",");
+  Serial.print(",");
  }
  
  void addJsonArr8U(const char *name, uint8_t *va) {
@@ -519,9 +541,9 @@ void addJson(const char *name, int value) {
     Serial.print("\"");
     Serial.print(name);
     Serial.print(i?"R":"L");
-    Serial.print("\":\"");
+    Serial.print("\":");
     Serial.print(va[i]);
-    Serial.print("\",");
+    Serial.print(",");
   }
  }
  

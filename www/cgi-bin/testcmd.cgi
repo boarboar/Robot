@@ -20,7 +20,7 @@ do
 	wait     
 	read _T2 trash < /proc/uptime
 	cat /tmp/drvcon.tmp | tr -d '\r\n'
-	echo '"X":"0"}'
+	echo '"Z":"0"}'
 	echo -n "$_T1 $_T2 $_DEC : " >> /var/log/drive.log
 	cat /tmp/drvcon.tmp >> /var/log/drive.log	
  fi 

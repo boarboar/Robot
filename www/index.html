@@ -23,6 +23,13 @@ removng indrive causes stop cmd after non-drive cmds like log...
 "use strict";
 
 var term;
+var ctx_c;
+var x0_c, y0_c;
+var scale_c;
+var ctx_m;
+var x0_m, y0_m;
+var scale_m;
+var x_prev=0, y_prev=0;
 var gauge_PL, gauge_PR;
 var gauge_RL, gauge_RR;
 var iid=0;
@@ -129,6 +136,39 @@ function dispIntVal(id, val, lo, hi, g) {
 	if (typeof(g) !== 'undefined') g.setValue(i);
 }
 
+function drawArrow(vx, vy) {
+	var w=x0_c, h=y0_c;
+	ctx_c.clearRect(0, 0, w*2, h*2);
+	var x=x0_c+vx*scale_c;
+	var y=y0_c-vy*scale_c;
+	ctx_c.fillStyle = 'green';
+	ctx_c.strokeStyle = 'green';
+	ctx_c.beginPath();
+    ctx_c.moveTo(x0_c,y0_c);
+    ctx_c.lineTo(x, y);
+	ctx_c.closePath();
+    ctx_c.stroke();
+	ctx_c.beginPath();
+    ctx_c.arc(x0_c, y0_c, 5, 0, 2 * Math.PI, false);
+    ctx_c.fill();
+}
+
+function path(vx, vy) {
+	var w=x0_m, h=y0_m;
+	var x0=x0_m+x_prev*scale_m;
+	var y0=y0_m-y_prev*scale_m;
+	var x=x0_m+vx*scale_m;
+	var y=y0_m-vy*scale_m;
+	
+	console.log(x0+','+y0+'->'+x+','+y);
+	ctx_m.beginPath();
+	ctx_m.moveTo(x0,y0);
+	ctx_m.lineTo(x,y);
+	ctx_m.closePath();
+	ctx_m.stroke();
+	x_prev=vx; y_prev=vy;
+}
+
 function onAjaxSuccess(data)
 {
   term.echo(JSON.stringify(data));
@@ -141,6 +181,17 @@ function onAjaxSuccess(data)
   if (typeof(data.S) !== 'undefined') osd+='Speed='+data.S+' cm/s';
   if (typeof(data.D) !== 'undefined') osd+=', Dist='+(data.D/100)+' M';
   if (typeof(data.F) !== 'undefined') osd+=', Diff='+(data.F)+' cm';
+  /*
+  if (typeof(data.NX) !== 'undefined') osd+=', N=('+(data.NX/10000);
+  if (typeof(data.NY) !== 'undefined') osd+=','+(data.NY/10000)+')';
+  */
+  if (typeof(data.NX) !== 'undefined' && typeof(data.NY) !== 'undefined') {
+	osd+=', N=('+(data.NX/10000)+','+(data.NY/10000)+')';
+	drawArrow(data.NX, data.NY);
+  }
+  if (typeof(data.X) !== 'undefined' && typeof(data.Y) !== 'undefined') {	
+	path(data.X, data.Y);
+  }
   $("#OSD").text(osd);
  }
 
@@ -169,23 +220,24 @@ function execcmd(code) {
 	switch(code) {
 		case 87:cmd="DLR=100,100"; break;
 		//case '65':cmd="DLR=-100,100"; break;
-		case 65:cmd="DLR=-10,60"; break;
+		case 65:cmd="DLR=-20,60"; break;
 		case 83:cmd="DLR=-100,-100"; break;
 		//case '68':cmd="DLR=100,-100"; break;
-		case 68:cmd="DLR=60,-10"; break;
+		case 68:cmd="DLR=60,-20"; break;
 
 		case 81:cmd="DLR=60,100"; break;
 		case 69:cmd="DLR=100,60"; break;
 		
-		case 90:cmd="DLR=0,0"; /*indrive=0;*/ doStop=1; break;
+		case 90:cmd="DLR=0,0"; doStop=1; break;
 		
 		case 188:cmd="DLR=-100,100"; break;
 		case 190:cmd="DLR=100,-100"; break;
 		
 		
-		case 84:cmd="Test"; /*indrive=0;*/ break;
-		case 76:cmd="Log"; /*indrive=0;*/ break;
-		default: cmd="?"; /*indrive=0;*/ break;
+		case 84:cmd="Test"; break;
+		case 76:cmd="Log"; break;
+		case 82:cmd="Rst"; break; // Clean canvas!!!!! Reset pos!!!!
+		default: cmd="?"; break;
 		}
 	if(cmd==="?") {
 		term.error("unknown cmd "+code);
@@ -257,6 +309,18 @@ $(function(){
 	term.echo("Getting video stream...");
 	//$("#camera_view").attr("src", 'http://88.53.197.250/axis-cgi/mjpg/video.cgi?resolution=320x240');
 	$("#camera_view").attr("src", "http://" + document.location.host + ":8080/?action=stream");
+
+	ctx_c=$("#compass")[0].getContext('2d'); 
+	x0_c=$("#compass").width()/2;
+	y0_c=$("#compass").height()/2;
+	scale_c=Math.max(x0_c, y0_c)*2/10000;
+	drawArrow(0, 10000);	
+	ctx_m=$("#map")[0].getContext('2d'); 
+	x0_m=$("#map").width()/2;
+	y0_m=$("#map").height()/2;
+	scale_m=Math.max(x0_m, y0_m)*2/1000;
+	ctx_m.strokeStyle = 'blue';
+	//path(0, 100); path(100, 0); path(0, -100); path(-100, 0);
 	term.echo("READY!");
 });
 </script>
@@ -267,7 +331,11 @@ $(function(){
 <div class="inner centered padded" id=camera>
 <img id=camera_view height="100%" width="100%"></img> 
 </div>
+<!--<div class="inner centered padded OSD" id=OSD>OSD<canvas id=map></canvas></div>-->
 <div class="inner centered padded OSD" id=OSD>OSD</div>
+<div class="inner centered padded OSD"><canvas id=map width="640" height="480"></canvas></div>
+<div class="inner centered padded OSD"><canvas id=compass  width="100" height="100"></canvas></div>
+
 </div>
 <div class=outer id=panel>
 <div class="centered padded_screw">
