@@ -154,13 +154,13 @@ function drawArrow(vx, vy) {
 }
 
 function path(vx, vy) {
-	var w=x0_m, h=y0_m;
+	//var w=x0_m, h=y0_m;
 	var x0=x0_m+x_prev*scale_m;
 	var y0=y0_m-y_prev*scale_m;
 	var x=x0_m+vx*scale_m;
 	var y=y0_m-vy*scale_m;
 	
-	console.log(x0+','+y0+'->'+x+','+y);
+	//console.log(x0+','+y0+'->'+x+','+y);
 	ctx_m.beginPath();
 	ctx_m.moveTo(x0,y0);
 	ctx_m.lineTo(x,y);
@@ -174,17 +174,14 @@ function onAjaxSuccess(data)
   term.echo(JSON.stringify(data));
   dispIntVal("#PL", data.PL, 30, 200, gauge_PL); 
   dispIntVal("#PR", data.PR, 30, 200, gauge_PR);
-  dispIntVal("#RL", data.RL, 10, 400, gauge_RL);
-  dispIntVal("#RR", data.RR, 10, 400, gauge_RR);
+  dispIntVal("#RL", data.WL, 10, 400, gauge_RL);
+  dispIntVal("#RR", data.WR, 10, 400, gauge_RR);
   //if(data.Q==="2") term.echo("this was a test cmd..."); // test
   var osd='';
   if (typeof(data.S) !== 'undefined') osd+='Speed='+data.S+' cm/s';
   if (typeof(data.D) !== 'undefined') osd+=', Dist='+(data.D/100)+' M';
   if (typeof(data.F) !== 'undefined') osd+=', Diff='+(data.F)+' cm';
-  /*
-  if (typeof(data.NX) !== 'undefined') osd+=', N=('+(data.NX/10000);
-  if (typeof(data.NY) !== 'undefined') osd+=','+(data.NY/10000)+')';
-  */
+
   if (typeof(data.NX) !== 'undefined' && typeof(data.NY) !== 'undefined') {
 	osd+=', N=('+(data.NX/10000)+','+(data.NY/10000)+')';
 	drawArrow(data.NX, data.NY);
@@ -236,7 +233,7 @@ function execcmd(code) {
 		
 		case 84:cmd="Test"; break;
 		case 76:cmd="Log"; break;
-		case 82:cmd="Rst"; break; // Clean canvas!!!!! Reset pos!!!!
+		case 82:cmd="Rst"; x_prev=y_prev=0; ctx_c.clearRect(0, 0, x0_m*2, y0_m*2); break; 
 		default: cmd="?"; break;
 		}
 	if(cmd==="?") {

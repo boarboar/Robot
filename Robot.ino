@@ -128,7 +128,7 @@ uint8_t pid_log_pow[PID_LOG_SZ][2];
 struct LogRec {
   uint8_t cmd_id;
   uint8_t pid_log_idx;
-  uint16_t ctime;
+  uint8_t ctime;
   uint8_t pid_log_rate[2];
   int8_t pid_log_derr[2];
   int8_t pid_log_ierr[2];
@@ -235,7 +235,9 @@ void Notify() {
     case EnumCmdStop: 
     case EnumCmdRst: {
       addJsonArr8U("P", cur_power); 
-      addJson("RL", last_enc_rate[0]*WHEEL_RATIO_RPM);addJson("RR", last_enc_rate[1]*WHEEL_RATIO_RPM);
+      addJsonArr8U("T", trg_rate); 
+      addJsonArr8U("R", last_enc_rate); 
+      addJson("WL", last_enc_rate[0]*WHEEL_RATIO_RPM);addJson("WR", last_enc_rate[1]*WHEEL_RATIO_RPM);
       int16_t s[2];
       for(uint8_t i=0; i<2; i++) {         
         if(drv_dir[i]==0) s[i]=0;
