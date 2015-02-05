@@ -1,5 +1,7 @@
 
 // TODO
+// lastCommandTime is wrong for drive measurement time!!!
+// use array in resp
 
 //    NOT_ON_TIMER, /*  2 - P1.0 */
 //    T0A0,         /*  3 - P1.1, note: A0 output cannot be used with analogWrite */
@@ -235,7 +237,7 @@ void Notify() {
     case EnumCmdStop: 
     case EnumCmdRst: {
       uint32_t t=millis();
-      addJson("L", (uint16_t)(t-lastCommandTime));
+      addJson("L", (uint16_t)(t-lastCommandTime)); // wrong!!!!
       addJsonArr8U("P", cur_power); 
       addJsonArr8U("T", trg_rate); 
       addJsonArr8U("R", last_enc_rate); 
