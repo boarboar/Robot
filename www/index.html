@@ -197,12 +197,12 @@ function path(vx, vy) {
 function onAjaxSuccess(data)
 {
   term.echo(JSON.stringify(data));
-  /*
+  
   dispIntVal("#PL", data.PL, 30, 200, gauge_PL); 
   dispIntVal("#PR", data.PR, 30, 200, gauge_PR);
   dispIntVal("#RL", data.WL, 10, 400, gauge_RL);
   dispIntVal("#RR", data.WR, 10, 400, gauge_RR);
-  */
+  
   
   var osd='';
   if (typeof(data.S) !== 'undefined') osd+='Speed='+data.S+' cm/s';
@@ -218,7 +218,7 @@ function onAjaxSuccess(data)
 	path(data.X, data.Y);
   } */
   if (typeof(data.X) !== 'undefined') {	
-    osd+=', N=('+(data.X[0])+','+(data.X[1])+')';
+    osd+=', Pos=('+(data.X[0])+','+(data.X[1])+')';
 	path(data.X[0], data.X[1]);
   }
   $("#OSD").text(osd);
