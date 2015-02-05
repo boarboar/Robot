@@ -234,6 +234,8 @@ void Notify() {
     case EnumCmdContinueDrive:     
     case EnumCmdStop: 
     case EnumCmdRst: {
+      uint32_t t=millis();
+      addJson("L", (uint16_t)(t-lastCommandTime));
       addJsonArr8U("P", cur_power); 
       addJsonArr8U("T", trg_rate); 
       addJsonArr8U("R", last_enc_rate); 
@@ -251,8 +253,9 @@ void Notify() {
       addJson("F", (int16_t)(diff/10));
       addJson("NX", (int16_t)nx);
       addJson("NY", (int16_t)ny);
-      addJson("X", (int16_t)(x/10));
-      addJson("Y", (int16_t)(y/10));
+      //addJson("X", (int16_t)(x/10));
+      //addJson("Y", (int16_t)(y/10));
+      addJsonArr16_2("X", (int16_t)(x/10), (int16_t)(y/10)); // in cm
       }
       break; 
     case EnumCmdTest:       
@@ -580,7 +583,7 @@ byte bctoi(byte index, int *val)
   return index;
 }
 
- void addJson(const char *name, int value) {
+ void addJson(const char *name, int16_t value) {
   Serial.print("\"");
   Serial.print(name);
   Serial.print("\":");
@@ -597,6 +600,16 @@ byte bctoi(byte index, int *val)
     Serial.print(va[i]);
     Serial.print(",");
   }
+ }
+
+ void addJsonArr16_2(const char *name, int16_t v1, int16_t v2) {
+    Serial.print("\"");
+    Serial.print(name);
+    Serial.print("\":[");
+    Serial.print(v1);
+    Serial.print(",");
+    Serial.print(v2);
+    Serial.print("],");
  }
  
  uint16_t isqrt32(uint32_t n)  

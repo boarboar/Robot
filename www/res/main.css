@@ -116,6 +116,56 @@ border: 1px red dotted;
 	*/
 }
 
+/*
+.p_chart{
+	border: 2px  #ccc inset; 
+	border-radius:4px;
+	font-family:arial;
+	font-size:18px;
+	font-weight:bold;	
+	background-color: black;
+	color: green;	
+	width:194px;
+	height:180px;
+}
+*/
+
+  
+.chart_holder{
+	border: 2px  #ccc inset; 
+	border-radius:4px;
+	position: relative;
+	background-color: transparent;
+	width:194px;
+	height:180px;
+}
+
+.chart_layer0{
+	position: absolute; 
+	left: 0; top: 0; 
+	z-index: 0;
+	font-family:arial;
+	font-size:8px;
+	font-weight:bold;	
+	background-color: black;
+	color: green;	
+	width:194px;
+	height:180px;
+}
+
+.chart_layer1{
+	position: absolute; 
+	left: 0; top: 0; 
+	z-index: 0;
+	font-family:arial;
+	font-size:8px;
+	font-weight:bold;	
+	background-color: transparent;
+	color: yellow;	
+	width:194px;
+	height:180px;
+}
+
 .p_val_alr {
 	color: red;
 }

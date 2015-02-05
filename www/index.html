@@ -29,6 +29,8 @@ var scale_c;
 var ctx_m;
 var x0_m, y0_m;
 var scale_m;
+var ctx_h;
+var w_h, h_h;
 var x_prev=0, y_prev=0;
 var gauge_PL, gauge_PR;
 var gauge_RL, gauge_RR;
@@ -92,6 +94,7 @@ function taskHandler(task, callback) {
 	).error(function(q,s,e) { term.error("Ajax "+s+" "+e); callback();});		
 }
 
+/*
 function createGauge(id, m, t1, t2, g) {
 	var gauge = new Gauge({
 		renderTo    : id,
@@ -122,6 +125,28 @@ function createGauge(id, m, t1, t2, g) {
 	});
 	gauge.draw();	
 	return gauge;
+}
+*/
+
+function prepareChart() {
+
+	
+	var ctx=$("#chart_bg")[0].getContext('2d'); 
+	var w=$("#chart_bg").width();
+	var h=$("#chart_bg").height();
+	
+	ctx.strokeStyle="green";
+	ctx.lineWidth=1;
+	ctx.setLineDash([5]);
+	
+	//for(i=0; i<3; i++) {
+		ctx.beginPath();
+		ctx.moveTo(0,h/2);
+		ctx.lineTo(w, h/2);
+		ctx.closePath();
+		ctx.stroke();		
+	//}
+	
 }
 
 function dispIntVal(id, val, lo, hi, g) {
@@ -172,11 +197,13 @@ function path(vx, vy) {
 function onAjaxSuccess(data)
 {
   term.echo(JSON.stringify(data));
+  /*
   dispIntVal("#PL", data.PL, 30, 200, gauge_PL); 
   dispIntVal("#PR", data.PR, 30, 200, gauge_PR);
   dispIntVal("#RL", data.WL, 10, 400, gauge_RL);
   dispIntVal("#RR", data.WR, 10, 400, gauge_RR);
-  //if(data.Q==="2") term.echo("this was a test cmd..."); // test
+  */
+  
   var osd='';
   if (typeof(data.S) !== 'undefined') osd+='Speed='+data.S+' cm/s';
   if (typeof(data.D) !== 'undefined') osd+=', Dist='+(data.D/100)+' M';
@@ -186,8 +213,13 @@ function onAjaxSuccess(data)
 	osd+=', N=('+(data.NX/10000)+','+(data.NY/10000)+')';
 	drawArrow(data.NX, data.NY);
   }
+  /*
   if (typeof(data.X) !== 'undefined' && typeof(data.Y) !== 'undefined') {	
 	path(data.X, data.Y);
+  } */
+  if (typeof(data.X) !== 'undefined') {	
+    osd+=', N=('+(data.X[0])+','+(data.X[1])+')';
+	path(data.X[0], data.X[1]);
   }
   $("#OSD").text(osd);
  }
@@ -196,14 +228,11 @@ function execcmd(code) {
 	// exec
 	
 	var ms = new Date().getTime();
-	if(lastcode===code &&  (ms - lasttime) < 400) { 
-	//term.echo("[[;yellow;]SKIP] "+code);
+	if(lastcode===code &&  (ms - lasttime) < 200) { 	// was 4500. now 200 to get indrive progress faster
 	return; }
 	lasttime=ms;
 	lastcode=code;
-	
-	//term.echo("[[;yellow;]KEYS:] "+keys);
-	
+		
 //	indrive=1; 
 	// test composite:
 	if(keys[87]===1) {
@@ -293,13 +322,14 @@ $(function(){
 	height: 100,
 	prompt: '> '});	
 	term.disable();
-	
+/*	
 	term.echo("Setting gauge...");
 	
 	gauge_PL=createGauge('gauge_PL', 254, 30, 200, ['0','50','100','150','200','250','300']);
 	gauge_PR=createGauge('gauge_PR', 254, 30, 200, ['0','50','100','150','200','250','300']);
 	gauge_RL=createGauge('gauge_RL', 200, 10, 190, ['0','50','100','150','200']);
 	gauge_RR=createGauge('gauge_RR', 200, 10, 190, ['0','50','100','150','200']);
+*/
 	  
 	term.echo("Setting ajax...");
 	$.ajaxSetup({type: 'POST',timeout: 5000,dataType: 'json'});
@@ -317,7 +347,28 @@ $(function(){
 	y0_m=$("#map").height()/2;
 	scale_m=Math.max(x0_m, y0_m)*2/1000;
 	ctx_m.strokeStyle = 'blue';
+	
+	prepareChart();
+	
 	//path(0, 100); path(100, 0); path(0, -100); path(-100, 0);
+	
+	/*
+	ctx_h=$("#chart_fg")[0].getContext('2d'); 
+	w_h=$("#chart_fg").width();
+	h_h=$("#chart_fg").height();
+
+	ctx_h.fillStyle="#FF0000";
+	ctx_h.fillRect(0,0, w_h/2, h_h/2);
+
+	ctx_h=$("#chart_bg")[0].getContext('2d'); 
+	w_h=$("#chart_bg").width();
+	h_h=$("#chart_bg").height();
+
+	ctx_h.fillStyle="#00FF00";
+	ctx_h.fillRect(w_h/2, h_h/2, w_h/2, h_h/2);
+	ctx_h.clearRect(0,0, w_h, h_h);
+	*/
+	
 	term.echo("READY!");
 });
 </script>
@@ -328,7 +379,7 @@ $(function(){
 <div class="inner centered padded" id=camera>
 <img id=camera_view height="100%" width="100%"></img> 
 </div>
-<!--<div class="inner centered padded OSD" id=OSD>OSD<canvas id=map></canvas></div>-->
+
 <div class="inner centered padded OSD" id=OSD>OSD</div>
 <div class="inner centered padded OSD"><canvas id=map width="640" height="480"></canvas></div>
 <div class="inner centered padded OSD"><canvas id=compass  width="100" height="100"></canvas></div>
@@ -338,15 +389,37 @@ $(function(){
 <div class="centered padded_screw">
 <table class="centered padded" style="top: 10px">
 
-<tr><td class=p_noborder><div class="p_lab">POWL</div></td><td class=p_noborder> <div class=p_val id=PL>100</div></td></tr>
-<tr><td class=p_noborder><div class="p_lab">POWR</div></td><td class=p_noborder> <div class=p_val id=PR>75</div></td></tr>
-<tr><td class=p_noborder><div class="p_lab">RPML</div></td><td class=p_noborder> <div class=p_val id=RL>300</div></td></tr>
-<tr><td class=p_noborder><div class="p_lab">RPMR</div></td><td class=p_noborder> <div class=p_val id=RR>295</div></td></tr>
+<tr><td class=p_noborder><div class=p_lab>POWL</div></td><td class=p_noborder> <div class=p_val id=PL>100</div></td></tr>
+<tr><td class=p_noborder><div class=p_lab>POWR</div></td><td class=p_noborder> <div class=p_val id=PR>75</div></td></tr>
+<tr><td class=p_noborder><div class=p_lab>RPML</div></td><td class=p_noborder> <div class=p_val id=RL>300</div></td></tr>
+<tr><td class=p_noborder><div class=p_lab>RPMR</div></td><td class=p_noborder> <div class=p_val id=RR>295</div></td></tr>
 
+<!--
 <tr><td class=p_noborder><canvas id="gauge_PL"></canvas></td><td class=p_noborder><canvas id="gauge_PR"></td></tr>
 <tr><td class=p_noborder><canvas id="gauge_RL"></canvas></td><td class=p_noborder><canvas id="gauge_RR"></td></tr>
+-->
+<!--<tr><td class=p_noborder colspan="2"><canvas id="chart" class=p_chart></canvas></td></tr>-->
+<tr><td class=p_noborder colspan="2">
+<div  class=chart_holder>
+<!--
+ <canvas id="chart" width="100" height="100" 
+   style="position: absolute; left: 0; top: 0; z-index: 0;"></canvas>
+   -->
+<canvas id="chart_bg" class=chart_layer0 width="194" height="180"></canvas>    
+<canvas id="chart_fg" class=chart_layer1 width="194" height="180"></canvas>  
 
+</div></td></tr>
 </table>
+
+<!--
+<div  class=p_chart>
+
+ <canvas id="chart" width="100" height="100" 
+   style="position: absolute; left: 0; top: 0; z-index: 0;"></canvas>
+   
+</div>  
+ -->
+ 
 </div>
 </div>
 <div class=outer id=controls tabindex="0">
