@@ -212,10 +212,13 @@ void loop()
     if(cmdResult==EnumCmdDrive || (cmdResult==EnumCmdContinueDrive && !IsDrive) ) {
       lastCycleTime=lastPidTime=millis(); //NB!
       StartDrive();
+      last_dur=0;
       lastCommandTime = millis();
     } else if(cmdResult==EnumCmdContinueDrive && IsDrive) {
+      last_dur=millis()-lastCommandTime;
       lastCommandTime = millis();
     } else if(cmdResult==EnumCmdStop) {
+      last_dur=millis()-lastCommandTime;
       StopDrive();
     } else if(cmdResult==EnumCmdRst) {
       StopDrive();
@@ -237,11 +240,17 @@ void Notify() {
     case EnumCmdStop: 
     case EnumCmdRst: {
       uint32_t t=millis();
-      addJson("L", (uint16_t)(t-lastCommandTime)); // wrong!!!!
+      addJson("L", last_dur); 
+      /*
       addJsonArr8U("P", cur_power); 
       addJsonArr8U("T", trg_rate); 
       addJsonArr8U("R", last_enc_rate); 
-      addJson("WL", last_enc_rate[0]*WHEEL_RATIO_RPM);addJson("WR", last_enc_rate[1]*WHEEL_RATIO_RPM);
+      */
+      addJsonArr16_2("P", cur_power[0], cur_power[1]);
+      addJsonArr16_2("T", trg_rate[0], trg_rate[1]);
+      addJsonArr16_2("R", last_enc_rate[0], last_enc_rate[1]);
+      //addJson("WL", last_enc_rate[0]*WHEEL_RATIO_RPM);addJson("WR", last_enc_rate[1]*WHEEL_RATIO_RPM);
+      addJsonArr16_2("W", last_enc_rate[0]*WHEEL_RATIO_RPM, last_enc_rate[1]*WHEEL_RATIO_RPM); // in cm
       int16_t s[2];
       for(uint8_t i=0; i<2; i++) {         
         if(drv_dir[i]==0) s[i]=0;
@@ -253,10 +262,8 @@ void Notify() {
       addJson("S", (s[0]+s[1])/2);
       addJson("D", (int16_t)(dist/10));
       addJson("F", (int16_t)(diff/10));
-      addJson("NX", (int16_t)nx);
-      addJson("NY", (int16_t)ny);
-      //addJson("X", (int16_t)(x/10));
-      //addJson("Y", (int16_t)(y/10));
+      //addJson("NX", (int16_t)nx); addJson("NY", (int16_t)ny);
+      addJsonArr16_2("N", (int16_t)nx, (int16_t)ny); // in cm
       addJsonArr16_2("X", (int16_t)(x/10), (int16_t)(y/10)); // in cm
       }
       break; 
@@ -358,7 +365,7 @@ void StopDrive()
   Drive(0, 0, 0, 0);
   IsDrive = false;
   digitalWrite(RED_LED, LOW);  
-  last_dur=n-lastCommandTime;
+  //last_dur=n-lastCommandTime;
   last_enc_rate[0]=last_enc_rate[1]=0;
   cur_power[0]=cur_power[1]=0;
 

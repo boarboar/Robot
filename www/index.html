@@ -128,9 +128,7 @@ function createGauge(id, m, t1, t2, g) {
 }
 */
 
-function prepareChart() {
-
-	
+function prepareChart() {	
 	var ctx=$("#chart_bg")[0].getContext('2d'); 
 	var w=$("#chart_bg").width();
 	var h=$("#chart_bg").height();
@@ -139,13 +137,13 @@ function prepareChart() {
 	ctx.lineWidth=1;
 	ctx.setLineDash([5]);
 	
-	//for(i=0; i<3; i++) {
+	for(var i=1; i<4; i++) {
 		ctx.beginPath();
-		ctx.moveTo(0,h/2);
-		ctx.lineTo(w, h/2);
+		ctx.moveTo(0,h-i*50);
+		ctx.lineTo(w, h-i*50);
 		ctx.closePath();
 		ctx.stroke();		
-	//}
+	}
 	
 }
 
@@ -198,25 +196,36 @@ function onAjaxSuccess(data)
 {
   term.echo(JSON.stringify(data));
   
+  /*
   dispIntVal("#PL", data.PL, 30, 200, gauge_PL); 
   dispIntVal("#PR", data.PR, 30, 200, gauge_PR);
   dispIntVal("#RL", data.WL, 10, 400, gauge_RL);
   dispIntVal("#RR", data.WR, 10, 400, gauge_RR);
+  */
+  
+  dispIntVal("#PL", data.P[0], 30, 200, gauge_PL); 
+  dispIntVal("#PR", data.P[1], 30, 200, gauge_PR);
+  dispIntVal("#RL", data.W[0], 10, 400, gauge_RL);
+  dispIntVal("#RR", data.W[1], 10, 400, gauge_RR);
   
   
   var osd='';
   if (typeof(data.S) !== 'undefined') osd+='Speed='+data.S+' cm/s';
   if (typeof(data.D) !== 'undefined') osd+=', Dist='+(data.D/100)+' M';
   if (typeof(data.F) !== 'undefined') osd+=', Diff='+(data.F)+' cm';
-
+/*
   if (typeof(data.NX) !== 'undefined' && typeof(data.NY) !== 'undefined') {
 	osd+=', N=('+(data.NX/10000)+','+(data.NY/10000)+')';
 	drawArrow(data.NX, data.NY);
   }
-  /*
+  
   if (typeof(data.X) !== 'undefined' && typeof(data.Y) !== 'undefined') {	
 	path(data.X, data.Y);
   } */
+  if (typeof(data.N) !== 'undefined') {
+	osd+=', N=('+(data.N[0]/10000)+','+(data.N[1]/10000)+')';
+	drawArrow(data.N[0], data.N[1]);
+  }
   if (typeof(data.X) !== 'undefined') {	
     osd+=', Pos=('+(data.X[0])+','+(data.X[1])+')';
 	path(data.X[0], data.X[1]);
