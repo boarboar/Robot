@@ -50,6 +50,9 @@
 #define ENC2_IN  P1_5
 #define ENC1_IN  P2_0
 
+#define US_IN    P1_6
+#define US_OUT   P1_7
+
 // common vars 
 //const unsigned int CYCLE_TIMEOUT = 50;
 const unsigned int CYCLE_TIMEOUT = 75;
@@ -100,6 +103,9 @@ int32_t tx=-V_NORM, ty=0;
 float nx=0.0, ny=1.0;
 float tx=-1.0, ty=0.0;
 */
+
+uint16_t us_dist=0; 
+
 enum EnumCmd { EnumCmdDrive=1, EnumCmdTest, EnumCmdStop, EnumCmdLog, EnumCmdContinueDrive, EnumCmdRst };  
 enum EnumError { EnumErrorUnknown=-1, EnumErrorBadSyntax=-2, EnumErrorBadParam=-3, EnumErrorNone=-100};  
 
@@ -157,7 +163,10 @@ void setup()
   attachInterrupt(ENC1_IN, encodeInterrupt_1, CHANGE); 
   pinMode(ENC2_IN, INPUT);  
   attachInterrupt(ENC2_IN, encodeInterrupt_2, CHANGE); 
-
+  
+  pinMode(US_OUT, OUTPUT);     
+  pinMode(US_IN, INPUT);     
+  
   pinMode(RED_LED, OUTPUT);     
   //pinMode(GREEN_LED, OUTPUT);     
   for(int i=0; i<5; i++) {
@@ -205,6 +214,8 @@ void loop()
     lastCycleTime=cycleTime; 
   }  
 
+  readUSDist();
+  
   if(ReadSerialCommand()) {
     cmdResult = Parse(); // postpone cmd report for 100ms
     bytes = 0; // empty input buffer (only one command at a time)
@@ -265,6 +276,7 @@ void Notify() {
       //addJson("NX", (int16_t)nx); addJson("NY", (int16_t)ny);
       addJsonArr16_2("N", (int16_t)nx, (int16_t)ny); // in cm
       addJsonArr16_2("X", (int16_t)(x/10), (int16_t)(y/10)); // in cm
+      addJson("U", (int16_t)(us_dist));
       }
       break; 
     case EnumCmdTest:       
@@ -315,6 +327,16 @@ boolean CheckCommandTimeout()
   if ( commandTime >= lastCommandTime) commandTime -= lastCommandTime; 
   else lastCommandTime = 0;
   return commandTime > CMD_TIMEOUT;
+}
+
+void readUSDist() {
+  digitalWrite(US_OUT, LOW);
+  delayMicroseconds(2);
+  digitalWrite(US_OUT, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(US_OUT, LOW);
+  uint32_t d=pulseIn(US_IN, HIGH, 25000);
+  us_dist=(uint16_t)(d/58);
 }
 
 void StartDrive() 
