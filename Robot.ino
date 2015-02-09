@@ -104,7 +104,7 @@ float nx=0.0, ny=1.0;
 float tx=-1.0, ty=0.0;
 */
 
-uint16_t us_dist=0; 
+volatile int16_t us_dist=0; 
 
 enum EnumCmd { EnumCmdDrive=1, EnumCmdTest, EnumCmdStop, EnumCmdLog, EnumCmdContinueDrive, EnumCmdRst };  
 enum EnumError { EnumErrorUnknown=-1, EnumErrorBadSyntax=-2, EnumErrorBadParam=-3, EnumErrorNone=-100};  
@@ -123,7 +123,7 @@ uint8_t calib_enc_rate=0; // target rate (counts per RATE_SAMPLE_PERIOD) for 100
 int8_t last_err[2]={0,0};
 int8_t int_err[2]={0,0};
 
-#define PID_LOG_SZ 8
+#define PID_LOG_SZ 7
 uint8_t pid_log_cnt=0;
 uint8_t pid_log_ptr=0;
 /*
@@ -214,7 +214,7 @@ void loop()
     lastCycleTime=cycleTime; 
   }  
 
-  readUSDist();
+  //readUSDist();
   
   if(ReadSerialCommand()) {
     cmdResult = Parse(); // postpone cmd report for 100ms
@@ -237,7 +237,8 @@ void loop()
       nx=0; ny=V_NORM;
       tx=-V_NORM;ty=0;
     }
-    delay(RESP_TIMEOUT); 
+    delay(RESP_TIMEOUT);
+    readUSDist(); 
     Notify(); // added 06.10.2014
   }
 }
@@ -282,6 +283,8 @@ void Notify() {
     case EnumCmdTest:       
       addJson("TB", calib_enc_rate); addJson("TD", last_dur); addJsonArr8U("R", last_enc_rate); //addJsonArr8U("EC", enc_cnt);
       addJson("OVF", (int16_t)(EncOverflow));
+            addJson("U", (int16_t)(us_dist));
+
 
       break;
     case EnumCmdLog: {

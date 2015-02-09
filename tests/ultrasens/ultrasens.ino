@@ -23,7 +23,7 @@ void loop()
   delayMicroseconds(10); 
   digitalWrite(outputPin, LOW);    
   uint32_t distance = pulseIn(inputPin, HIGH, 25000);  // Read receiver pulse time. TO is 25ms. 
-  distance= distance/58;   // Transform pulse time to distance 
-  Serial.println(distance);   //Ourput distance                  
+  int16_t d=(int16_t)(distance/58);
+  Serial.println(d);   //Ourput distance                  
   delay(1000);   
 }
