@@ -283,9 +283,7 @@ void Notify() {
     case EnumCmdTest:       
       addJson("TB", calib_enc_rate); addJson("TD", last_dur); addJsonArr8U("R", last_enc_rate); //addJsonArr8U("EC", enc_cnt);
       addJson("OVF", (int16_t)(EncOverflow));
-            addJson("U", (int16_t)(us_dist));
-
-
+      addJson("U", (int16_t)(us_dist));
       break;
     case EnumCmdLog: {
       //Serial.print(pid_log_cnt);Serial.print(";");
@@ -338,8 +336,9 @@ void readUSDist() {
   digitalWrite(US_OUT, HIGH);
   delayMicroseconds(10);
   digitalWrite(US_OUT, LOW);
-  uint32_t d=pulseIn(US_IN, HIGH, 25000);
-  us_dist=(uint16_t)(d/58);
+  //uint32_t d=pulseIn(US_IN, HIGH, 25000);
+  uint32_t d=pulseIn(US_IN, HIGH, 50000);
+  us_dist=(int16_t)(d/58);
 }
 
 void StartDrive() 

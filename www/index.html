@@ -203,11 +203,14 @@ function onAjaxSuccess(data)
   dispIntVal("#RR", data.WR, 10, 400, gauge_RR);
   */
   
-  dispIntVal("#PL", data.P[0], 30, 200, gauge_PL); 
-  dispIntVal("#PR", data.P[1], 30, 200, gauge_PR);
-  dispIntVal("#RL", data.W[0], 10, 400, gauge_RL);
-  dispIntVal("#RR", data.W[1], 10, 400, gauge_RR);
-  
+  if (typeof(data.P) !== 'undefined') {
+	dispIntVal("#PL", data.P[0], 30, 200, gauge_PL); 
+	dispIntVal("#PR", data.P[1], 30, 200, gauge_PR);
+  }
+  if (typeof(data.W) !== 'undefined') {
+	dispIntVal("#RL", data.W[0], 10, 400, gauge_RL);
+	dispIntVal("#RR", data.W[1], 10, 400, gauge_RR);
+  }
   
   var osd='';
   if (typeof(data.S) !== 'undefined') osd+='Speed='+data.S+' cm/s';
