@@ -253,15 +253,9 @@ void Notify() {
     case EnumCmdRst: {
       uint32_t t=millis();
       addJson("L", last_dur); 
-      /*
-      addJsonArr8U("P", cur_power); 
-      addJsonArr8U("T", trg_rate); 
-      addJsonArr8U("R", last_enc_rate); 
-      */
       addJsonArr16_2("P", cur_power[0], cur_power[1]);
       addJsonArr16_2("T", trg_rate[0], trg_rate[1]);
       addJsonArr16_2("R", last_enc_rate[0], last_enc_rate[1]);
-      //addJson("WL", last_enc_rate[0]*WHEEL_RATIO_RPM);addJson("WR", last_enc_rate[1]*WHEEL_RATIO_RPM);
       addJsonArr16_2("W", last_enc_rate[0]*WHEEL_RATIO_RPM, last_enc_rate[1]*WHEEL_RATIO_RPM); // in cm
       int16_t s[2];
       for(uint8_t i=0; i<2; i++) {         
@@ -274,7 +268,6 @@ void Notify() {
       addJson("S", (s[0]+s[1])/2);
       addJson("D", (int16_t)(dist/10));
       addJson("F", (int16_t)(diff/10));
-      //addJson("NX", (int16_t)nx); addJson("NY", (int16_t)ny);
       addJsonArr16_2("N", (int16_t)nx, (int16_t)ny); // in cm
       addJsonArr16_2("X", (int16_t)(x/10), (int16_t)(y/10)); // in cm
       addJson("U", (int16_t)(us_dist));
@@ -286,7 +279,6 @@ void Notify() {
       addJson("U", (int16_t)(us_dist));
       break;
     case EnumCmdLog: {
-      //Serial.print(pid_log_cnt);Serial.print(";");
       addJson("LCNT", pid_log_cnt);
       Serial.print("\""); Serial.print("LOGR"); Serial.print("\":\"");
       for(uint8_t i=0; i<PID_LOG_SZ; i++) {
@@ -389,18 +381,8 @@ void StopDrive()
   Drive(0, 0, 0, 0);
   IsDrive = false;
   digitalWrite(RED_LED, LOW);  
-  //last_dur=n-lastCommandTime;
   last_enc_rate[0]=last_enc_rate[1]=0;
   cur_power[0]=cur_power[1]=0;
-
-  /*
-  if(n>lastCommandTime) {
-    last_dur=n-lastCommandTime;
-    last_enc_rate[0]=(uint8_t)((uint16_t)enc_cnt[0]*RATE_SAMPLE_PERIOD/last_dur); 
-    last_enc_rate[1]=(uint8_t)((uint16_t)enc_cnt[1]*RATE_SAMPLE_PERIOD/last_dur);
-  }
-  else { last_dur=0; last_enc_rate[0]=last_enc_rate[1]=0;}
-  */
 }
 
 void PID(uint16_t ctime)
