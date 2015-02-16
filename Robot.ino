@@ -67,6 +67,9 @@ const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
 const unsigned int WHEEL_RAD_MM = 33; // 34?
 const unsigned int WHEEL_BASE_MM = 140;// approx... carriage base 145 - too high, 135 - too low
 const unsigned int WHEEL_RATIO_SMPS = (WHEEL_RAD_MM*628/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
+const unsigned int US_WALL_DIST=20;
+const unsigned int US_WALL_CNT_THR=2;
+
 #define V_NORM 10000
 
 #define CHGST_TO_MM(CNT)  ((int32_t)(CNT)*62832*WHEEL_RAD_MM/WHEEL_CHGSTATES/10000)
@@ -105,6 +108,7 @@ float tx=-1.0, ty=0.0;
 */
 
 volatile int16_t us_dist=0; 
+volatile int8_t us_wall_cnt=0; 
 
 enum EnumCmd { EnumCmdDrive=1, EnumCmdTest, EnumCmdStop, EnumCmdLog, EnumCmdContinueDrive, EnumCmdRst };  
 enum EnumError { EnumErrorUnknown=-1, EnumErrorBadSyntax=-2, EnumErrorBadParam=-3, EnumErrorNone=-100};  
@@ -201,7 +205,12 @@ void loop()
   if ( cycleTime - lastCycleTime >= CYCLE_TIMEOUT) { // working cycle    
   
   if (IsDrive) {
-      if (CheckCommandTimeout()) StopDrive();
+    
+      readUSDist();
+      
+      if (CheckCommandTimeout() ||  
+        (us_wall_cnt>=US_WALL_CNT_THR && drv_dir[0]==1 && drv_dir[1]==1) // wall ahead && forwared drive
+        ) StopDrive();
       else { 
         if ( cycleTime < lastPidTime) lastPidTime=0; // wraparound   
         uint16_t ctime = cycleTime - lastPidTime;
@@ -213,8 +222,6 @@ void loop()
     }
     lastCycleTime=cycleTime; 
   }  
-
-  //readUSDist();
   
   if(ReadSerialCommand()) {
     cmdResult = Parse(); // postpone cmd report for 100ms
@@ -237,8 +244,8 @@ void loop()
       nx=0; ny=V_NORM;
       tx=-V_NORM;ty=0;
     }
-    delay(RESP_TIMEOUT);
-    readUSDist(); 
+    //delay(RESP_TIMEOUT);
+    //readUSDist(); 
     Notify(); // added 06.10.2014
   }
 }
@@ -331,6 +338,7 @@ void readUSDist() {
   //uint32_t d=pulseIn(US_IN, HIGH, 25000);
   uint32_t d=pulseIn(US_IN, HIGH, 50000);
   us_dist=(int16_t)(d/58);
+  if(us_dist<=US_WALL_DIST) us_wall_cnt++;
 }
 
 void StartDrive() 
@@ -383,6 +391,7 @@ void StopDrive()
   digitalWrite(RED_LED, LOW);  
   last_enc_rate[0]=last_enc_rate[1]=0;
   cur_power[0]=cur_power[1]=0;
+  us_wall_cnt=0;
 }
 
 void PID(uint16_t ctime)
