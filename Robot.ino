@@ -1,7 +1,8 @@
 
 // TODO
-// lastCommandTime is wrong for drive measurement time!!!
-// use array in resp
+// 
+// do not start moving fwd on US condition
+// UI - distance on arrow
 
 //    NOT_ON_TIMER, /*  2 - P1.0 */
 //    T0A0,         /*  3 - P1.1, note: A0 output cannot be used with analogWrite */
@@ -67,7 +68,7 @@ const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
 const unsigned int WHEEL_RAD_MM = 33; // 34?
 const unsigned int WHEEL_BASE_MM = 140;// approx... carriage base 145 - too high, 135 - too low
 const unsigned int WHEEL_RATIO_SMPS = (WHEEL_RAD_MM*628/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
-const unsigned int US_WALL_DIST=20;
+const unsigned int US_WALL_DIST=40;
 const unsigned int US_WALL_CNT_THR=2;
 
 #define V_NORM 10000
@@ -108,7 +109,8 @@ float tx=-1.0, ty=0.0;
 */
 
 volatile int16_t us_dist=0; 
-volatile int8_t us_wall_cnt=0; 
+volatile int8_t us_wall_cnt_up=0; 
+volatile int8_t us_wall_cnt_dn=0; 
 
 enum EnumCmd { EnumCmdDrive=1, EnumCmdTest, EnumCmdStop, EnumCmdLog, EnumCmdContinueDrive, EnumCmdRst };  
 enum EnumError { EnumErrorUnknown=-1, EnumErrorBadSyntax=-2, EnumErrorBadParam=-3, EnumErrorNone=-100};  
@@ -154,15 +156,15 @@ volatile uint8_t EncOverflow=0;
 
 
 void setup()
-{
-  //analogFrequency(255);
-  
+{ 
   int ports[6]={M1_OUT_1,M1_OUT_2,M2_OUT_1,M2_OUT_2, M1_EN, M2_EN };
   for(int i=0;i<6;i++) {
     digitalWrite(ports[i], LOW); 
     pinMode(ports[i], OUTPUT);
   }
-  analogFrequency(100);
+  //analogFrequency(100);
+  analogFrequency(255);
+ 
   pinMode(ENC1_IN, INPUT);     
   attachInterrupt(ENC1_IN, encodeInterrupt_1, CHANGE); 
   pinMode(ENC2_IN, INPUT);  
@@ -204,12 +206,12 @@ void loop()
   if ( cycleTime < lastCycleTime) lastCycleTime=0; // wraparound   
   if ( cycleTime - lastCycleTime >= CYCLE_TIMEOUT) { // working cycle    
   
-  if (IsDrive) {
-    
-      readUSDist();
-      
+  //readUSDist();
+  
+  if (IsDrive) {    
+      readUSDist();      
       if (CheckCommandTimeout() ||  
-        (us_wall_cnt>=US_WALL_CNT_THR && drv_dir[0]==1 && drv_dir[1]==1) // wall ahead && forwared drive
+        (us_wall_cnt_up>=US_WALL_CNT_THR && drv_dir[0]==1 && drv_dir[1]==1) // wall ahead && forwared drive
         ) StopDrive();
       else { 
         if ( cycleTime < lastPidTime) lastPidTime=0; // wraparound   
@@ -228,10 +230,16 @@ void loop()
     bytes = 0; // empty input buffer (only one command at a time)
     cmd_id++;
     if(cmdResult==EnumCmdDrive || (cmdResult==EnumCmdContinueDrive && !IsDrive) ) {
-      lastCycleTime=lastPidTime=millis(); //NB!
-      StartDrive();
-      last_dur=0;
-      lastCommandTime = millis();
+      if(us_wall_cnt_up>=US_WALL_CNT_THR && drv_dir[0]==1 && drv_dir[1]==1) {
+        last_dur=millis()-lastCommandTime;
+        StopDrive();
+      }
+      else {
+        lastCycleTime=lastPidTime=millis(); //NB!
+        StartDrive();
+        last_dur=0;
+        lastCommandTime = millis();
+      }
     } else if(cmdResult==EnumCmdContinueDrive && IsDrive) {
       last_dur=millis()-lastCommandTime;
       lastCommandTime = millis();
@@ -244,7 +252,7 @@ void loop()
       nx=0; ny=V_NORM;
       tx=-V_NORM;ty=0;
     }
-    //delay(RESP_TIMEOUT);
+    delay(RESP_TIMEOUT);
     //readUSDist(); 
     Notify(); // added 06.10.2014
   }
@@ -278,6 +286,7 @@ void Notify() {
       addJsonArr16_2("N", (int16_t)nx, (int16_t)ny); // in cm
       addJsonArr16_2("X", (int16_t)(x/10), (int16_t)(y/10)); // in cm
       addJson("U", (int16_t)(us_dist));
+      addJson("UC", (int16_t)(us_wall_cnt_up));
       }
       break; 
     case EnumCmdTest:       
@@ -338,7 +347,14 @@ void readUSDist() {
   //uint32_t d=pulseIn(US_IN, HIGH, 25000);
   uint32_t d=pulseIn(US_IN, HIGH, 50000);
   us_dist=(int16_t)(d/58);
-  if(us_dist<=US_WALL_DIST) us_wall_cnt++;
+  if(us_dist<=US_WALL_DIST) {
+    if(us_wall_cnt_up<US_WALL_CNT_THR) us_wall_cnt_up++;
+    else us_wall_cnt_dn=0;
+  }
+  else {
+    if(us_wall_cnt_dn<US_WALL_CNT_THR) us_wall_cnt_dn++;
+    else us_wall_cnt_up=0;
+  }
 }
 
 void StartDrive() 
@@ -391,7 +407,7 @@ void StopDrive()
   digitalWrite(RED_LED, LOW);  
   last_enc_rate[0]=last_enc_rate[1]=0;
   cur_power[0]=cur_power[1]=0;
-  us_wall_cnt=0;
+  //us_wall_cnt=0;
 }
 
 void PID(uint16_t ctime)

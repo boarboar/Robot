@@ -159,21 +159,24 @@ function dispIntVal(id, val, lo, hi, g) {
 	if (typeof(g) !== 'undefined') g.setValue(i);
 }
 
-function drawArrow(vx, vy) {
+function drawArrow(vx, vy, dist) {
 	var w=x0_c, h=y0_c;
 	ctx_c.clearRect(0, 0, w*2, h*2);
 	var x=x0_c+vx*scale_c;
 	var y=y0_c-vy*scale_c;
 	ctx_c.fillStyle = 'green';
 	ctx_c.strokeStyle = 'green';
+	ctx_c.lineWidth=3;
 	ctx_c.beginPath();
     ctx_c.moveTo(x0_c,y0_c);
     ctx_c.lineTo(x, y);
 	ctx_c.closePath();
     ctx_c.stroke();
 	ctx_c.beginPath();
-    ctx_c.arc(x0_c, y0_c, 5, 0, 2 * Math.PI, false);
+    ctx_c.arc(x0_c, y0_c, 6, 0, 2 * Math.PI, false);
     ctx_c.fill();
+	ctx_c.fillStyle=dist<40 ? 'red' : dist < 80 ? 'yellow' : 'green';
+	ctx_c.fillText(dist, x0_c-vx*scale_c/4, y0_c+vy*scale_c/4);
 }
 
 function path(vx, vy) {
@@ -220,17 +223,18 @@ function onAjaxSuccess(data)
   
   if (typeof(data.N) !== 'undefined') {
 	osd+=', N=('+(data.N[0]/10000)+','+(data.N[1]/10000)+')';
-	drawArrow(data.N[0], data.N[1]);
+	drawArrow(data.N[0], data.N[1], data.U);
   }
   if (typeof(data.X) !== 'undefined') {	
     osd+=', Pos=('+(data.X[0])+','+(data.X[1])+')';
 	path(data.X[0], data.X[1]);
   }
   $("#OSD").text(osd);
-  
+  /*
   if (typeof(data.U) !== 'undefined') {
 	$("#compass").text(data.U);
   }
+  */
  }
 
 function execcmd(code) {
@@ -350,7 +354,8 @@ $(function(){
 	x0_c=$("#compass").width()/2;
 	y0_c=$("#compass").height()/2;
 	scale_c=Math.max(x0_c, y0_c)*2/10000;
-	drawArrow(0, 10000);	
+	ctx_c.font="24px bold Courier";
+	drawArrow(0, 10000, 75);	
 	ctx_m=$("#map")[0].getContext('2d'); 
 	x0_m=$("#map").width()/2;
 	y0_m=$("#map").height()/2;
