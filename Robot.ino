@@ -77,13 +77,23 @@ const unsigned int US_WALL_CNT_THR=2;
 
 // approx=30*628/400/44 = 1
 
+// for 5v
+/*
 #define M_POW_LOW   50
-//#define M_POW_HIGH 150
 #define M_POW_HIGH 175
 #define M_POW_MAX  254
 
-//#define M_PID_KP   1
 #define M_PID_KP   2
+#define M_PID_KI   0
+#define M_PID_KD   0
+*/
+
+// for 7.5v
+#define M_POW_LOW   30
+#define M_POW_HIGH 100
+#define M_POW_MAX  200
+
+#define M_PID_KP   1
 #define M_PID_KI   0
 #define M_PID_KD   0
 
@@ -185,8 +195,12 @@ void setup()
    
   // calibration sequence
   lastCommandTime=millis();
-  IsDrive=1; Drive(1, M_POW_HIGH, 1, M_POW_HIGH);
-  delay(RATE_SAMPLE_PERIOD*2); // warmup
+  IsDrive=1; 
+  // warmup (TODO - make step up)
+  Drive(1, M_POW_HIGH/2, 1, M_POW_HIGH/2);
+  delay(RATE_SAMPLE_PERIOD); 
+  Drive(1, M_POW_HIGH, 1, M_POW_HIGH);
+  delay(RATE_SAMPLE_PERIOD);   
   enc_cnt[0]=enc_cnt[1]=0;  
   delay(RATE_SAMPLE_PERIOD*2); // calibration
   calib_enc_rate = (enc_cnt[0]+enc_cnt[1])/4;
