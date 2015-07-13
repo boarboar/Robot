@@ -68,8 +68,8 @@ const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
 const unsigned int WHEEL_RAD_MM = 33; // 34?
 const unsigned int WHEEL_BASE_MM = 140;// approx... carriage base 145 - too high, 135 - too low
 const unsigned int WHEEL_RATIO_SMPS = (WHEEL_RAD_MM*628/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
-const unsigned int US_WALL_DIST=40;
-const unsigned int US_WALL_CNT_THR=2;
+const unsigned int US_WALL_DIST=0;
+const unsigned int US_WALL_CNT_THR=100;
 
 #define V_NORM 10000
 
@@ -206,10 +206,10 @@ void loop()
   if ( cycleTime < lastCycleTime) lastCycleTime=0; // wraparound   
   if ( cycleTime - lastCycleTime >= CYCLE_TIMEOUT) { // working cycle    
   
-  //readUSDist();
+  readUSDist();
   
   if (IsDrive) {    
-      readUSDist();      
+  //    readUSDist();      
       if (CheckCommandTimeout() ||  
         (us_wall_cnt_up>=US_WALL_CNT_THR && drv_dir[0]==1 && drv_dir[1]==1) // wall ahead && forwared drive
         ) StopDrive();
