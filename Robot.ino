@@ -61,7 +61,8 @@ const unsigned int PID_TIMEOUT = (CYCLE_TIMEOUT*4);
 //const unsigned int PID_TIMEOUT = CYCLE_TIMEOUT;
 //const unsigned int RESP_TIMEOUT = 90;
 const unsigned int RESP_TIMEOUT = 1;
-const unsigned int CMD_TIMEOUT = 1500; 
+//const unsigned int CMD_TIMEOUT = 1500; 
+const unsigned int CMD_TIMEOUT = 1000; 
 const unsigned int RATE_SAMPLE_PERIOD = 400;
 const unsigned int WHEEL_CHGSTATES = 40;
 const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
@@ -122,7 +123,7 @@ volatile int16_t us_dist=0;
 volatile int8_t us_wall_cnt_up=0; 
 volatile int8_t us_wall_cnt_dn=0; 
 
-enum EnumCmd { EnumCmdDrive=1, EnumCmdTest, EnumCmdStop, EnumCmdLog, EnumCmdContinueDrive, EnumCmdRst };  
+enum EnumCmd { EnumCmdDrive=1, EnumCmdTest=2, EnumCmdStop=3, EnumCmdLog=4, EnumCmdContinueDrive=5, EnumCmdRst=6 };  
 enum EnumError { EnumErrorUnknown=-1, EnumErrorBadSyntax=-2, EnumErrorBadParam=-3, EnumErrorNone=-100};  
 
 int8_t cmdResult=EnumErrorNone;
@@ -142,17 +143,11 @@ int8_t int_err[2]={0,0};
 #define PID_LOG_SZ 7
 uint8_t pid_log_cnt=0;
 uint8_t pid_log_ptr=0;
-/*
-uint8_t pid_log_idx[PID_LOG_SZ];
-uint8_t pid_log_rate[PID_LOG_SZ][2];
-int8_t pid_log_derr[PID_LOG_SZ][2];
-int8_t pid_log_ierr[PID_LOG_SZ][2];
-uint8_t pid_log_pow[PID_LOG_SZ][2];
-*/
+
 struct LogRec {
-  uint8_t cmd_id;
-  uint8_t pid_log_idx;
-  uint8_t ctime;
+  uint8_t cmd_id;       // ref to cmd id
+  uint8_t pid_log_idx;   
+  uint8_t ctime;         // pid interval 
   uint8_t pid_log_rate[2];
   int8_t pid_log_derr[2];
   int8_t pid_log_ierr[2];
@@ -173,7 +168,7 @@ void setup()
     pinMode(ports[i], OUTPUT);
   }
   //analogFrequency(100);
-  analogFrequency(255);
+  //analogFrequency(255);
  
   pinMode(ENC1_IN, INPUT);     
   attachInterrupt(ENC1_IN, encodeInterrupt_1, CHANGE); 
@@ -184,10 +179,8 @@ void setup()
   pinMode(US_IN, INPUT);     
   
   pinMode(RED_LED, OUTPUT);     
-  //pinMode(GREEN_LED, OUTPUT);     
   for(int i=0; i<5; i++) {
     digitalWrite(RED_LED, HIGH); delay(100); digitalWrite(RED_LED, LOW); 
-    //digitalWrite(GREEN_LED, HIGH); delay(100); digitalWrite(GREEN_LED, LOW);
   }
   Serial.begin(TTY_SPEED);
   lastCommandTime = lastCycleTime = millis();  
@@ -208,7 +201,6 @@ void setup()
   
   digitalWrite(RED_LED, LOW);
 
-  //for(uint8_t i=0; i<PID_LOG_SZ; i++) pid_log_idx[i]=255;
   for(uint8_t i=0; i<PID_LOG_SZ; i++) logr[i].pid_log_idx=255;
 
   while (Serial.available()) Serial.read();  // eat garbage
@@ -220,12 +212,12 @@ void loop()
   if ( cycleTime < lastCycleTime) lastCycleTime=0; // wraparound   
   if ( cycleTime - lastCycleTime >= CYCLE_TIMEOUT) { // working cycle    
   
-  readUSDist();
+  //readUSDist();
   
   if (IsDrive) {    
   //    readUSDist();      
-      if (CheckCommandTimeout() ||  
-        (us_wall_cnt_up>=US_WALL_CNT_THR && drv_dir[0]==1 && drv_dir[1]==1) // wall ahead && forwared drive
+      if (CheckCommandTimeout() 
+       /*|| (us_wall_cnt_up>=US_WALL_CNT_THR && drv_dir[0]==1 && drv_dir[1]==1) // wall ahead && forwared drive*/
         ) StopDrive();
       else { 
         if ( cycleTime < lastPidTime) lastPidTime=0; // wraparound   
@@ -244,11 +236,12 @@ void loop()
     bytes = 0; // empty input buffer (only one command at a time)
     cmd_id++;
     if(cmdResult==EnumCmdDrive || (cmdResult==EnumCmdContinueDrive && !IsDrive) ) {
+      /*
       if(us_wall_cnt_up>=US_WALL_CNT_THR && drv_dir[0]==1 && drv_dir[1]==1) {
         last_dur=millis()-lastCommandTime;
         StopDrive();
       }
-      else {
+      else*/ {
         lastCycleTime=lastPidTime=millis(); //NB!
         StartDrive();
         last_dur=0;
@@ -267,7 +260,7 @@ void loop()
       tx=-V_NORM;ty=0;
     }
     delay(RESP_TIMEOUT);
-    //readUSDist(); 
+    readUSDist(); 
     Notify(); // added 06.10.2014
   }
 }
@@ -311,28 +304,40 @@ void Notify() {
     case EnumCmdLog: {
       addJson("LCNT", pid_log_cnt);
       Serial.print("\""); Serial.print("LOGR"); Serial.print("\":\"");
-      for(uint8_t i=0; i<PID_LOG_SZ; i++) {
-        /*
-        if(pid_log_idx[i]!=255) {
-        Serial.print(pid_log_idx[i]);Serial.print(":"); 
-        Serial.print(pid_log_rate[i][0]);Serial.print(","); Serial.print(pid_log_rate[i][1]);
-        Serial.print("("); Serial.print(trg_rate[0]-pid_log_rate[i][0]);Serial.print(","); Serial.print(trg_rate[1]-pid_log_rate[i][1]); Serial.print(")"); 
-        Serial.print("("); Serial.print(pid_log_ierr[i][0]);Serial.print(","); Serial.print(pid_log_ierr[i][1]); Serial.print(")"); 
-        Serial.print("("); Serial.print(pid_log_derr[i][0]);Serial.print(","); Serial.print(pid_log_derr[i][1]); Serial.print(")"); 
-        Serial.print(":"); Serial.print(pid_log_pow[i][0]);Serial.print(","); Serial.print(pid_log_pow[i][1]); Serial.print(";"); 
-        pid_log_idx[i]=255;
-        */
-        if(logr[i].pid_log_idx!=255) {
+      // find first record
+      uint8_t idx0=0;
+      uint8_t i;
+      uint8_t minidx=255;
+      
+      for(i=0; i<PID_LOG_SZ; i++) if(logr[i].pid_log_idx<minidx) idx0=i;
+      for(i=0; i<PID_LOG_SZ; i++) {
+        if(logr[idx0].pid_log_idx!=255) { // if not empty
+        Serial.print(logr[idx0].pid_log_idx);Serial.print(":"); Serial.print(logr[idx0].cmd_id);Serial.print(":"); Serial.print(logr[idx0].ctime); Serial.print(":"); 
+        Serial.print("("); Serial.print(logr[idx0].pid_log_rate[0]);Serial.print(","); Serial.print(logr[idx0].pid_log_rate[1]); Serial.print(")"); 
+        Serial.print("("); Serial.print(trg_rate[0]-logr[idx0].pid_log_rate[0]);Serial.print(","); Serial.print(trg_rate[1]-logr[idx0].pid_log_rate[1]); Serial.print(")"); 
+        Serial.print("("); Serial.print(logr[idx0].pid_log_ierr[0]);Serial.print(","); Serial.print(logr[idx0].pid_log_ierr[1]); Serial.print(")"); 
+        Serial.print("("); Serial.print(logr[idx0].pid_log_derr[0]);Serial.print(","); Serial.print(logr[idx0].pid_log_derr[1]); Serial.print(")"); 
+        Serial.print("("); Serial.print(logr[idx0].pid_log_pow[0]);Serial.print(","); Serial.print(logr[idx0].pid_log_pow[1]); Serial.print(");"); 
+        logr[idx0].pid_log_idx=255; // mark as empty      
+        idx0++;
+        if(idx0>=PID_LOG_SZ) idx0++; //wraparound
+        delay(10);
+        }
+      
+/*        
+      for(i=0; i<PID_LOG_SZ; i++) {
+        if(logr[i].pid_log_idx!=255) { // if not empty
         Serial.print(logr[i].pid_log_idx);Serial.print(":"); Serial.print(logr[i].cmd_id);Serial.print(":"); Serial.print(logr[i].ctime); Serial.print(":"); 
         Serial.print("("); Serial.print(logr[i].pid_log_rate[0]);Serial.print(","); Serial.print(logr[i].pid_log_rate[1]); Serial.print(")"); 
         Serial.print("("); Serial.print(trg_rate[0]-logr[i].pid_log_rate[0]);Serial.print(","); Serial.print(trg_rate[1]-logr[i].pid_log_rate[1]); Serial.print(")"); 
         Serial.print("("); Serial.print(logr[i].pid_log_ierr[0]);Serial.print(","); Serial.print(logr[i].pid_log_ierr[1]); Serial.print(")"); 
         Serial.print("("); Serial.print(logr[i].pid_log_derr[0]);Serial.print(","); Serial.print(logr[i].pid_log_derr[1]); Serial.print(")"); 
         Serial.print("("); Serial.print(logr[i].pid_log_pow[0]);Serial.print(","); Serial.print(logr[i].pid_log_pow[1]); Serial.print(");"); 
-        logr[i].pid_log_idx=255;
-        
+        logr[i].pid_log_idx=255; // mark as empty      
         delay(10);
         }
+        */
+        
       }
       Serial.print("\",");
       pid_log_cnt=0;
@@ -383,25 +388,7 @@ void StartDrive()
      }    
     last_err[i]=0;
     //int_err[i]=0; // ?
-    /*
-    pid_log_rate[pid_log_ptr][i]=0;
-    pid_log_ierr[pid_log_ptr][i]=0;
-    pid_log_derr[pid_log_ptr][i]=0;
-    pid_log_pow[pid_log_ptr][i]=cur_power[i];
-    */
-    /*
-    logr[pid_log_ptr].pid_log_rate[i]=0;
-    logr[pid_log_ptr].pid_log_ierr[i]=0;
-    logr[pid_log_ptr].pid_log_derr[i]=0;
-    logr[pid_log_ptr].pid_log_pow[i]=cur_power[i];
-    */
   }
-  //pid_log_idx[pid_log_ptr]=pid_log_cnt; 
-  /*
-  logr[pid_log_ptr].pid_log_idx=pid_log_cnt; 
-  pid_log_cnt++;  
-  if(++pid_log_ptr>=PID_LOG_SZ) pid_log_ptr=0;
-*/
   enc_cnt[0]=enc_cnt[1]=0;  
   Drive(drv_dir[0], cur_power[0], drv_dir[1], cur_power[1]); // change interface
   if (!IsDrive)
@@ -444,12 +431,6 @@ void PID(uint16_t ctime)
       cur_power[i]=pow;
       last_err[i]=err;
       // log entry
-      /*
-      pid_log_rate[pid_log_ptr][i]=last_enc_rate[i];
-      pid_log_derr[pid_log_ptr][i]=err_d;
-      pid_log_ierr[pid_log_ptr][i]=int_err[i];
-      pid_log_pow[pid_log_ptr][i]=pow;      
-      */
       logr[pid_log_ptr].pid_log_rate[i]=last_enc_rate[i];
       logr[pid_log_ptr].pid_log_derr[i]=err_d;
       logr[pid_log_ptr].pid_log_ierr[i]=int_err[i];
@@ -498,7 +479,6 @@ void PID(uint16_t ctime)
     y+=(int32_t)ny*(s[0]+s[1])/(2*V_NORM);
   }
   // log advance/wrap  
-  //pid_log_idx[pid_log_ptr]=pid_log_cnt++;   
   
   logr[pid_log_ptr].cmd_id=cmd_id;
   logr[pid_log_ptr].ctime=ctime;
