@@ -312,17 +312,17 @@ void Notify() {
       for(i=0; i<PID_LOG_SZ; i++) if(logr[i].pid_log_idx<minidx) idx0=i;
       for(i=0; i<PID_LOG_SZ; i++) {
         if(logr[idx0].pid_log_idx!=255) { // if not empty
-        Serial.print(logr[idx0].pid_log_idx);Serial.print(":"); Serial.print(logr[idx0].cmd_id);Serial.print(":"); Serial.print(logr[idx0].ctime); Serial.print(":"); 
-        Serial.print("("); Serial.print(logr[idx0].pid_log_rate[0]);Serial.print(","); Serial.print(logr[idx0].pid_log_rate[1]); Serial.print(")"); 
-        Serial.print("("); Serial.print(trg_rate[0]-logr[idx0].pid_log_rate[0]);Serial.print(","); Serial.print(trg_rate[1]-logr[idx0].pid_log_rate[1]); Serial.print(")"); 
-        Serial.print("("); Serial.print(logr[idx0].pid_log_ierr[0]);Serial.print(","); Serial.print(logr[idx0].pid_log_ierr[1]); Serial.print(")"); 
-        Serial.print("("); Serial.print(logr[idx0].pid_log_derr[0]);Serial.print(","); Serial.print(logr[idx0].pid_log_derr[1]); Serial.print(")"); 
-        Serial.print("("); Serial.print(logr[idx0].pid_log_pow[0]);Serial.print(","); Serial.print(logr[idx0].pid_log_pow[1]); Serial.print(");"); 
-        logr[idx0].pid_log_idx=255; // mark as empty      
-        idx0++;
-        if(idx0>=PID_LOG_SZ) idx0++; //wraparound
-        delay(10);
+          Serial.print(logr[idx0].pid_log_idx);Serial.print(":"); Serial.print(logr[idx0].cmd_id);Serial.print(":"); Serial.print(logr[idx0].ctime); Serial.print(":"); 
+          Serial.print("("); Serial.print(logr[idx0].pid_log_rate[0]);Serial.print(","); Serial.print(logr[idx0].pid_log_rate[1]); Serial.print(")"); 
+          Serial.print("("); Serial.print(trg_rate[0]-logr[idx0].pid_log_rate[0]);Serial.print(","); Serial.print(trg_rate[1]-logr[idx0].pid_log_rate[1]); Serial.print(")"); 
+          Serial.print("("); Serial.print(logr[idx0].pid_log_ierr[0]);Serial.print(","); Serial.print(logr[idx0].pid_log_ierr[1]); Serial.print(")"); 
+          Serial.print("("); Serial.print(logr[idx0].pid_log_derr[0]);Serial.print(","); Serial.print(logr[idx0].pid_log_derr[1]); Serial.print(")"); 
+          Serial.print("("); Serial.print(logr[idx0].pid_log_pow[0]);Serial.print(","); Serial.print(logr[idx0].pid_log_pow[1]); Serial.print(");"); 
+          logr[idx0].pid_log_idx=255; // mark as empty      
+          delay(10);
         }
+        idx0++;
+        if(idx0>=PID_LOG_SZ) idx0++; //wraparound        
       
 /*        
       for(i=0; i<PID_LOG_SZ; i++) {
