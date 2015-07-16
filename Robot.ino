@@ -192,8 +192,11 @@ void setup()
   // warmup (TODO - make step up)
   Drive(1, M_POW_HIGH/2, 1, M_POW_HIGH/2);
   delay(RATE_SAMPLE_PERIOD); 
+  Drive(1, M_POW_HIGH*2/3, 1, M_POW_HIGH*2/3);
+  delay(RATE_SAMPLE_PERIOD);     
   Drive(1, M_POW_HIGH, 1, M_POW_HIGH);
   delay(RATE_SAMPLE_PERIOD);   
+  // now sample for twice the time
   enc_cnt[0]=enc_cnt[1]=0;  
   delay(RATE_SAMPLE_PERIOD*2); // calibration
   calib_enc_rate = (enc_cnt[0]+enc_cnt[1])/4;
@@ -322,7 +325,7 @@ void Notify() {
           delay(10);
         }
         idx0++;
-        if(idx0>=PID_LOG_SZ) idx0++; //wraparound        
+        if(idx0>=PID_LOG_SZ) idx0=0; //wraparound        
       
 /*        
       for(i=0; i<PID_LOG_SZ; i++) {
