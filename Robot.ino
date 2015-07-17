@@ -57,8 +57,8 @@
 // common vars 
 //const unsigned int CYCLE_TIMEOUT = 50;
 const unsigned int CYCLE_TIMEOUT = 75;
-const unsigned int PID_TIMEOUT = (CYCLE_TIMEOUT*4);
-//const unsigned int PID_TIMEOUT = CYCLE_TIMEOUT;
+//const unsigned int PID_TIMEOUT = (CYCLE_TIMEOUT*4);
+const unsigned int PID_TIMEOUT = CYCLE_TIMEOUT*2;
 //const unsigned int RESP_TIMEOUT = 90;
 const unsigned int RESP_TIMEOUT = 1;
 //const unsigned int CMD_TIMEOUT = 1500; 
@@ -94,10 +94,16 @@ const unsigned int US_WALL_CNT_THR=100;
 #define M_POW_HIGH 100
 #define M_POW_MAX  200
 
+/*
+#define M_PID_KP   2
+#define M_PID_KI   1
+#define M_PID_KD   1
+*/
+
 #define M_PID_KP   1
 #define M_PID_KI   0
 #define M_PID_KD   0
-
+#define M_PID_DIV  1
 
 #define BUF_SIZE 20
 byte buf[BUF_SIZE];
@@ -312,7 +318,7 @@ void Notify() {
       uint8_t i;
       uint8_t minidx=255;
       
-      for(i=0; i<PID_LOG_SZ; i++) if(logr[i].pid_log_idx<minidx) idx0=i;
+      for(i=0; i<PID_LOG_SZ; i++) if(logr[i].pid_log_idx<minidx) {minidx=logr[i].pid_log_idx; idx0=i;}
       for(i=0; i<PID_LOG_SZ; i++) {
         if(logr[idx0].pid_log_idx!=255) { // if not empty
           Serial.print(logr[idx0].pid_log_idx);Serial.print(":"); Serial.print(logr[idx0].cmd_id);Serial.print(":"); Serial.print(logr[idx0].ctime); Serial.print(":"); 
@@ -427,7 +433,7 @@ void PID(uint16_t ctime)
       int8_t err = trg_rate[i]-last_enc_rate[i];
       int8_t err_d = err-last_err[i];
       int_err[i]=int_err[i]/2+err;      
-      int16_t pow=cur_power[i]+(int16_t)err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI+(int16_t)err_d*M_PID_KD;
+      int16_t pow=cur_power[i]+((int16_t)err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI+(int16_t)err_d*M_PID_KD)/M_PID_DIV;
       if(pow<0) pow=0;
       if(pow>M_POW_MAX) pow=M_POW_MAX;
       if(err) analogWrite(i==0 ? M1_EN : M2_EN , pow); 
