@@ -94,16 +94,10 @@ const unsigned int US_WALL_CNT_THR=100;
 #define M_POW_HIGH 100
 #define M_POW_MAX  200
 
-/*
 #define M_PID_KP   2
 #define M_PID_KI   1
 #define M_PID_KD   1
-*/
-
-#define M_PID_KP   1
-#define M_PID_KI   0
-#define M_PID_KD   0
-#define M_PID_DIV  1
+#define M_PID_DIV  2
 
 #define BUF_SIZE 20
 byte buf[BUF_SIZE];
@@ -113,6 +107,8 @@ uint32_t lastCommandTime;
 uint32_t lastCycleTime;
 uint32_t lastPidTime;
 uint16_t last_dur=0;
+uint16_t us_meas_dur=0;
+
 uint8_t cmd_id=0;
 
 int32_t dist=0;
@@ -309,6 +305,7 @@ void Notify() {
       addJson("TB", calib_enc_rate); addJson("TD", last_dur); addJsonArr8U("R", last_enc_rate); //addJsonArr8U("EC", enc_cnt);
       addJson("OVF", (int16_t)(EncOverflow));
       addJson("U", (int16_t)(us_dist));
+      addJson("UD", (int16_t)(us_meas_dur));
       break;
     case EnumCmdLog: {
       addJson("LCNT", pid_log_cnt);
@@ -372,8 +369,10 @@ void readUSDist() {
   digitalWrite(US_OUT, HIGH);
   delayMicroseconds(10);
   digitalWrite(US_OUT, LOW);
+  uint32_t ms=millis();
   //uint32_t d=pulseIn(US_IN, HIGH, 25000);
   uint32_t d=pulseIn(US_IN, HIGH, 50000);
+  us_meas_dur = millis()-ms;
   us_dist=(int16_t)(d/58);
   if(us_dist<=US_WALL_DIST) {
     if(us_wall_cnt_up<US_WALL_CNT_THR) us_wall_cnt_up++;
