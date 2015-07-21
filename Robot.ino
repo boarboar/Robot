@@ -61,8 +61,8 @@ const unsigned int CYCLE_TIMEOUT = 75;
 const unsigned int PID_TIMEOUT = CYCLE_TIMEOUT*2;
 //const unsigned int RESP_TIMEOUT = 90;
 const unsigned int RESP_TIMEOUT = 1;
-//const unsigned int CMD_TIMEOUT = 1500; 
-const unsigned int CMD_TIMEOUT = 1000; 
+//const unsigned int CMD_TIMEOUT = 1000; 
+const unsigned int CMD_TIMEOUT = 800; 
 const unsigned int RATE_SAMPLE_PERIOD = 400;
 const unsigned int WHEEL_CHGSTATES = 40;
 const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
@@ -75,6 +75,8 @@ const unsigned int US_WALL_CNT_THR=100;
 #define V_NORM 10000
 
 #define CHGST_TO_MM(CNT)  ((int32_t)(CNT)*62832*WHEEL_RAD_MM/WHEEL_CHGSTATES/10000)
+#define STARTDRIVE() (cmdResult==EnumCmdDrive || (cmdResult==EnumCmdContinueDrive && !IsDrive))
+
 
 // approx=30*628/400/44 = 1
 
@@ -240,7 +242,7 @@ void loop()
     cmdResult = Parse(); // postpone cmd report for 100ms
     bytes = 0; // empty input buffer (only one command at a time)
     cmd_id++;
-    if(cmdResult==EnumCmdDrive || (cmdResult==EnumCmdContinueDrive && !IsDrive) ) {
+    if(STARTDRIVE()) {
       /*
       if(us_wall_cnt_up>=US_WALL_CNT_THR && drv_dir[0]==1 && drv_dir[1]==1) {
         last_dur=millis()-lastCommandTime;
@@ -251,6 +253,11 @@ void loop()
         StartDrive();
         last_dur=0;
         lastCommandTime = millis();
+        
+        pid_log_cnt=0;
+        pid_log_ptr=0;
+
+
       }
     } else if(cmdResult==EnumCmdContinueDrive && IsDrive) {
       last_dur=millis()-lastCommandTime;
@@ -431,18 +438,21 @@ void PID(uint16_t ctime)
       enc_cnt[i]=0; 
       int8_t err = trg_rate[i]-last_enc_rate[i];
       int8_t err_d = err-last_err[i];
-      int_err[i]=int_err[i]/2+err;      
-      int16_t pow=cur_power[i]+((int16_t)err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI+(int16_t)err_d*M_PID_KD)/M_PID_DIV;
-      if(pow<0) pow=0;
-      if(pow>M_POW_MAX) pow=M_POW_MAX;
-      if(err) analogWrite(i==0 ? M1_EN : M2_EN , pow); 
-      cur_power[i]=pow;
+      if(!STARTDRIVE()) { // do not correct for the first command in drive serie
+        int_err[i]=int_err[i]/2+err;      
+        int16_t pow=cur_power[i]+((int16_t)err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI+(int16_t)err_d*M_PID_KD)/M_PID_DIV;
+        if(pow<0) pow=0;
+        if(pow>M_POW_MAX) pow=M_POW_MAX;
+        if(err) analogWrite(i==0 ? M1_EN : M2_EN , pow); 
+        cur_power[i]=pow;
+      }
       last_err[i]=err;
       // log entry
       logr[pid_log_ptr].pid_log_rate[i]=last_enc_rate[i];
       logr[pid_log_ptr].pid_log_derr[i]=err_d;
       logr[pid_log_ptr].pid_log_ierr[i]=int_err[i];
-      logr[pid_log_ptr].pid_log_pow[i]=pow;      
+      //logr[pid_log_ptr].pid_log_pow[i]=pow;      
+      logr[pid_log_ptr].pid_log_pow[i]=cur_power[i];      
     } 
   if(s[0] || s[1]) {  
     dist+=(s[0]+s[1])/2; // drive distance, mm  
