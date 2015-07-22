@@ -92,7 +92,7 @@ const unsigned int US_WALL_CNT_THR=100;
 */
 
 // for 7.5v
-#define M_POW_LOW   30
+#define M_POW_LOW   50
 #define M_POW_HIGH 100
 #define M_POW_MAX  200
 
@@ -112,6 +112,8 @@ uint16_t last_dur=0;
 uint16_t us_meas_dur=0;
 
 uint8_t cmd_id=0;
+
+uint8_t test_val=0;
 
 int32_t dist=0;
 int16_t diff=0;
@@ -144,7 +146,8 @@ uint8_t calib_enc_rate=0; // target rate (counts per RATE_SAMPLE_PERIOD) for 100
 int8_t last_err[2]={0,0};
 int8_t int_err[2]={0,0};
 
-#define PID_LOG_SZ 7
+//#define PID_LOG_SZ 7
+#define PID_LOG_SZ 8
 uint8_t pid_log_cnt=0;
 uint8_t pid_log_ptr=0;
 
@@ -242,13 +245,10 @@ void loop()
     cmdResult = Parse(); // postpone cmd report for 100ms
     bytes = 0; // empty input buffer (only one command at a time)
     cmd_id++;
+    
+    test_val=0;
+    
     if(STARTDRIVE()) {
-      /*
-      if(us_wall_cnt_up>=US_WALL_CNT_THR && drv_dir[0]==1 && drv_dir[1]==1) {
-        last_dur=millis()-lastCommandTime;
-        StopDrive();
-      }
-      else*/ {
         lastCycleTime=lastPidTime=millis(); //NB!
         StartDrive();
         last_dur=0;
@@ -257,8 +257,14 @@ void loop()
         pid_log_cnt=0;
         pid_log_ptr=0;
 
+        test_val=1;
 
+      /*
+      if(us_wall_cnt_up>=US_WALL_CNT_THR && drv_dir[0]==1 && drv_dir[1]==1) {
+        last_dur=millis()-lastCommandTime;
+        StopDrive();
       }
+      */
     } else if(cmdResult==EnumCmdContinueDrive && IsDrive) {
       last_dur=millis()-lastCommandTime;
       lastCommandTime = millis();
@@ -271,7 +277,7 @@ void loop()
       nx=0; ny=V_NORM;
       tx=-V_NORM;ty=0;
     }
-    delay(RESP_TIMEOUT);
+    //delay(RESP_TIMEOUT);
     readUSDist(); 
     Notify(); // added 06.10.2014
   }
@@ -306,6 +312,8 @@ void Notify() {
       addJsonArr16_2("X", (int16_t)(x/10), (int16_t)(y/10)); // in cm
       addJson("U", (int16_t)(us_dist));
       addJson("UC", (int16_t)(us_wall_cnt_up));
+      addJson("TV", (int16_t)(test_val)); //test
+      addJsonArr16_2("LOG", (int16_t)(pid_log_cnt), (int16_t)(pid_log_ptr)); //test
       }
       break; 
     case EnumCmdTest:       
@@ -317,9 +325,11 @@ void Notify() {
     case EnumCmdLog: {
       addJson("LCNT", pid_log_cnt);
       Serial.print("\""); Serial.print("LOGR"); Serial.print("\":\"");
+      
+          uint8_t i;
+      /*
       // find first record
       uint8_t idx0=0;
-      uint8_t i;
       uint8_t minidx=255;
       
       for(i=0; i<PID_LOG_SZ; i++) if(logr[i].pid_log_idx<minidx) {minidx=logr[i].pid_log_idx; idx0=i;}
@@ -336,8 +346,8 @@ void Notify() {
         }
         idx0++;
         if(idx0>=PID_LOG_SZ) idx0=0; //wraparound        
-      
-/*        
+      }
+*/        
       for(i=0; i<PID_LOG_SZ; i++) {
         if(logr[i].pid_log_idx!=255) { // if not empty
         Serial.print(logr[i].pid_log_idx);Serial.print(":"); Serial.print(logr[i].cmd_id);Serial.print(":"); Serial.print(logr[i].ctime); Serial.print(":"); 
@@ -349,9 +359,8 @@ void Notify() {
         logr[i].pid_log_idx=255; // mark as empty      
         delay(10);
         }
-        */
-        
       }
+      
       Serial.print("\",");
       pid_log_cnt=0;
       pid_log_ptr=0;
@@ -431,14 +440,15 @@ void PID(uint16_t ctime)
   if(ctime>0) {
     int16_t s[2];
     for(uint8_t i=0; i<2; i++) {
+      int8_t err=0, err_d=0;
       if(drv_dir[i]==2) s[i]=-enc_cnt[i];
       else s[i]=enc_cnt[i];
       s[i]=CHGST_TO_MM(s[i]);
       last_enc_rate[i]=(uint8_t)((uint16_t)enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
       enc_cnt[i]=0; 
-      int8_t err = trg_rate[i]-last_enc_rate[i];
-      int8_t err_d = err-last_err[i];
       if(!STARTDRIVE()) { // do not correct for the first command in drive serie
+        err = trg_rate[i]-last_enc_rate[i];
+        err_d = err-last_err[i];
         int_err[i]=int_err[i]/2+err;      
         int16_t pow=cur_power[i]+((int16_t)err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI+(int16_t)err_d*M_PID_KD)/M_PID_DIV;
         if(pow<0) pow=0;
