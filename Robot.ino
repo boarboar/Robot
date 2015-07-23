@@ -62,7 +62,7 @@ const unsigned int PID_TIMEOUT = CYCLE_TIMEOUT*2;
 //const unsigned int RESP_TIMEOUT = 90;
 const unsigned int RESP_TIMEOUT = 1;
 //const unsigned int CMD_TIMEOUT = 1000; 
-const unsigned int CMD_TIMEOUT = 800; 
+const unsigned int CMD_TIMEOUT = 600; 
 const unsigned int RATE_SAMPLE_PERIOD = 400;
 const unsigned int WHEEL_CHGSTATES = 40;
 const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
@@ -71,6 +71,7 @@ const unsigned int WHEEL_BASE_MM = 140;// approx... carriage base 145 - too high
 const unsigned int WHEEL_RATIO_SMPS = (WHEEL_RAD_MM*628/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
 const unsigned int US_WALL_DIST=0;
 const unsigned int US_WALL_CNT_THR=100;
+const unsigned int M_COAST_TIME=100;
 
 #define V_NORM 10000
 
@@ -148,7 +149,7 @@ int8_t int_err[2]={0,0};
 
 //#define PID_LOG_SZ 7
 #define PID_LOG_SZ 8
-uint8_t pid_log_cnt=0;
+uint8_t pid_cnt=0;
 uint8_t pid_log_ptr=0;
 
 struct LogRec {
@@ -254,7 +255,7 @@ void loop()
         last_dur=0;
         lastCommandTime = millis();
         
-        pid_log_cnt=0;
+        pid_cnt=0;
         pid_log_ptr=0;
 
         test_val=1;
@@ -313,7 +314,7 @@ void Notify() {
       addJson("U", (int16_t)(us_dist));
       addJson("UC", (int16_t)(us_wall_cnt_up));
       addJson("TV", (int16_t)(test_val)); //test
-      addJsonArr16_2("LOG", (int16_t)(pid_log_cnt), (int16_t)(pid_log_ptr)); //test
+      addJsonArr16_2("LOG", (int16_t)(pid_cnt), (int16_t)(pid_log_ptr)); //test
       }
       break; 
     case EnumCmdTest:       
@@ -323,7 +324,7 @@ void Notify() {
       addJson("UD", (int16_t)(us_meas_dur));
       break;
     case EnumCmdLog: {
-      addJson("LCNT", pid_log_cnt);
+      addJson("LCNT", pid_cnt);
       Serial.print("\""); Serial.print("LOGR"); Serial.print("\":\"");
       
           uint8_t i;
@@ -362,7 +363,7 @@ void Notify() {
       }
       
       Serial.print("\",");
-      pid_log_cnt=0;
+      pid_cnt=0;
       pid_log_ptr=0;
       break;
     }
@@ -425,10 +426,11 @@ void StartDrive()
 void StopDrive() 
 {
   if(!IsDrive) return;
-  unsigned long n=millis();
-  if(n>lastPidTime) PID(n-lastPidTime); // finalize
-  Drive(0, 0, 0, 0);
   IsDrive = false;
+  Drive(0, 0, 0, 0);
+  delay(M_COAST_TIME);  
+  unsigned long n=millis();
+  if(n>lastPidTime) PID(n-lastPidTime); // finalize for the sake of dead reckoning
   digitalWrite(RED_LED, LOW);  
   last_enc_rate[0]=last_enc_rate[1]=0;
   cur_power[0]=cur_power[1]=0;
@@ -446,7 +448,7 @@ void PID(uint16_t ctime)
       s[i]=CHGST_TO_MM(s[i]);
       last_enc_rate[i]=(uint8_t)((uint16_t)enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
       enc_cnt[i]=0; 
-      if(!STARTDRIVE()) { // do not correct for the first command in drive serie
+      if(!STARTDRIVE() && IsDrive) { // do not correct for the first command in drive serie
         err = trg_rate[i]-last_enc_rate[i];
         err_d = err-last_err[i];
         int_err[i]=int_err[i]/2+err;      
@@ -510,7 +512,7 @@ void PID(uint16_t ctime)
   
   logr[pid_log_ptr].cmd_id=cmd_id;
   logr[pid_log_ptr].ctime=ctime;
-  logr[pid_log_ptr].pid_log_idx=pid_log_cnt++;   
+  logr[pid_log_ptr].pid_log_idx=pid_cnt++;   
   if(++pid_log_ptr>=PID_LOG_SZ) pid_log_ptr=0;        
   }
 }
@@ -597,8 +599,8 @@ int8_t Parse()
       if(m<-255 || m>254) return EnumErrorBadParam;
       if(buf[pos] != (i==0 ? ',' : 0)) return EnumErrorBadSyntax;
       if(m==0)       { if(drv_dir[i]!=0) { drv_dir[i]=0; chg=true;} cmd_power[i]=0; } 
-      else if (m>0)  { if(drv_dir[i]!=1 || cmd_power[i]!=m) { cmd_power[i]=m; drv_dir[i]=1; chg=true;} } 
-      else           { if(drv_dir[i]!=2 || cmd_power[i]!=-m) {cmd_power[i]=-m; drv_dir[i]=2; chg=true;} }  
+      else if (m>0)  { if(m<M_POW_LOW) m=M_POW_LOW; if(drv_dir[i]!=1 || cmd_power[i]!=m) { cmd_power[i]=m; drv_dir[i]=1; chg=true;} } 
+      else           { if((-m)<M_POW_LOW) m=-M_POW_LOW; if(drv_dir[i]!=2 || cmd_power[i]!=-m) {cmd_power[i]=-m; drv_dir[i]=2; chg=true;} }  
     }
     if(!drv_dir[0] && !drv_dir[1]) return EnumCmdStop;
     return chg ? EnumCmdDrive : EnumCmdContinueDrive;
