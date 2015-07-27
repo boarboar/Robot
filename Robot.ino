@@ -58,7 +58,7 @@
 //const unsigned int CYCLE_TIMEOUT = 50;
 const unsigned int CYCLE_TIMEOUT = 75;
 //const unsigned int PID_TIMEOUT = (CYCLE_TIMEOUT*4);
-const unsigned int PID_TIMEOUT = CYCLE_TIMEOUT*2;
+const unsigned int PID_TIMEOUT = CYCLE_TIMEOUT;
 //const unsigned int RESP_TIMEOUT = 90;
 const unsigned int RESP_TIMEOUT = 1;
 //const unsigned int CMD_TIMEOUT = 1000; 
@@ -72,6 +72,7 @@ const unsigned int WHEEL_RATIO_SMPS = (WHEEL_RAD_MM*628/RATE_SAMPLE_PERIOD/WHEEL
 const unsigned int US_WALL_DIST=0;
 const unsigned int US_WALL_CNT_THR=100;
 const unsigned int M_COAST_TIME=100;
+const unsigned int M_WUP_PID_CNT=2;
 
 #define V_NORM 10000
 
@@ -93,16 +94,16 @@ const unsigned int M_COAST_TIME=100;
 */
 
 // for 7.5v
-#define M_POW_LOW   50
+#define M_POW_LOW   75
 #define M_POW_HIGH 100
 #define M_POW_MAX  200
 
 #define M_PID_KP   2
-#define M_PID_KI   1
-#define M_PID_KD   1
+#define M_PID_KI   0
+#define M_PID_KD   0
 #define M_PID_DIV  2
 
-#define BUF_SIZE 20
+#define BUF_SIZE 16
 byte buf[BUF_SIZE];
 byte bytes = 0;
 
@@ -147,8 +148,12 @@ uint8_t calib_enc_rate=0; // target rate (counts per RATE_SAMPLE_PERIOD) for 100
 int8_t last_err[2]={0,0};
 int8_t int_err[2]={0,0};
 
-//#define PID_LOG_SZ 7
-#define PID_LOG_SZ 8
+// flags - TODO - bitfield
+boolean IsDrive = false;
+volatile uint8_t EncOverflow=0;
+
+//#define PID_LOG_SZ 8
+#define PID_LOG_SZ 12
 uint8_t pid_cnt=0;
 uint8_t pid_log_ptr=0;
 
@@ -163,11 +168,6 @@ struct LogRec {
 } logr[PID_LOG_SZ];
 
 
-// flags - TODO - bitfield
-boolean IsDrive = false;
-volatile uint8_t EncOverflow=0;
-
-
 void setup()
 { 
   int ports[6]={M1_OUT_1,M1_OUT_2,M2_OUT_1,M2_OUT_2, M1_EN, M2_EN };
@@ -176,7 +176,7 @@ void setup()
     pinMode(ports[i], OUTPUT);
   }
   //analogFrequency(100);
-  //analogFrequency(255);
+  analogFrequency(255);
  
   pinMode(ENC1_IN, INPUT);     
   attachInterrupt(ENC1_IN, encodeInterrupt_1, CHANGE); 
@@ -313,8 +313,10 @@ void Notify() {
       addJsonArr16_2("X", (int16_t)(x/10), (int16_t)(y/10)); // in cm
       addJson("U", (int16_t)(us_dist));
       addJson("UC", (int16_t)(us_wall_cnt_up));
+      /*
       addJson("TV", (int16_t)(test_val)); //test
       addJsonArr16_2("LOG", (int16_t)(pid_cnt), (int16_t)(pid_log_ptr)); //test
+      */
       }
       break; 
     case EnumCmdTest:       
@@ -387,8 +389,7 @@ void readUSDist() {
   delayMicroseconds(10);
   digitalWrite(US_OUT, LOW);
   uint32_t ms=millis();
-  //uint32_t d=pulseIn(US_IN, HIGH, 25000);
-  uint32_t d=pulseIn(US_IN, HIGH, 50000);
+  uint32_t d=pulseIn(US_IN, HIGH, 25000);
   us_meas_dur = millis()-ms;
   us_dist=(int16_t)(d/58);
   if(us_dist<=US_WALL_DIST) {
@@ -448,7 +449,7 @@ void PID(uint16_t ctime)
       s[i]=CHGST_TO_MM(s[i]);
       last_enc_rate[i]=(uint8_t)((uint16_t)enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
       enc_cnt[i]=0; 
-      if(!STARTDRIVE() && IsDrive) { // do not correct for the first command in drive serie
+      if(pid_cnt>=M_WUP_PID_CNT) { // do not correct for the first cycles - ca 100-200ms(warmup)
         err = trg_rate[i]-last_enc_rate[i];
         err_d = err-last_err[i];
         int_err[i]=int_err[i]/2+err;      
