@@ -62,7 +62,7 @@ const unsigned int PID_TIMEOUT = CYCLE_TIMEOUT;
 //const unsigned int RESP_TIMEOUT = 90;
 const unsigned int RESP_TIMEOUT = 1;
 //const unsigned int CMD_TIMEOUT = 1000; 
-const unsigned int CMD_TIMEOUT = 600; 
+const unsigned int CMD_TIMEOUT = 500; 
 const unsigned int RATE_SAMPLE_PERIOD = 400;
 const unsigned int WHEEL_CHGSTATES = 40;
 const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
@@ -94,13 +94,13 @@ const unsigned int M_WUP_PID_CNT=2;
 */
 
 // for 7.5v
-#define M_POW_LOW   75
+#define M_POW_LOW   70
 #define M_POW_HIGH 100
 #define M_POW_MAX  200
 
-#define M_PID_KP   2
+#define M_PID_KP   1
 #define M_PID_KI   0
-#define M_PID_KD   0
+#define M_PID_KD   1
 #define M_PID_DIV  2
 
 #define BUF_SIZE 16
