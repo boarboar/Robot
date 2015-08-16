@@ -55,12 +55,12 @@
 #define US_OUT   P1_7
 
 // common vars 
-//const unsigned int CYCLE_TIMEOUT = 50;
-const unsigned int CYCLE_TIMEOUT = 75;
+const unsigned int CYCLE_TIMEOUT = 50;
 //const unsigned int PID_TIMEOUT = (CYCLE_TIMEOUT*4);
-const unsigned int PID_TIMEOUT = CYCLE_TIMEOUT;
+//const unsigned int PID_TIMEOUT = CYCLE_TIMEOUT;
+const unsigned int PID_TIMEOUT = CYCLE_TIMEOUT*2;
 //const unsigned int RESP_TIMEOUT = 90;
-const unsigned int RESP_TIMEOUT = 1;
+const unsigned int RESP_TIMEOUT = 25; // C_T+R_T >= 75ms
 //const unsigned int CMD_TIMEOUT = 1000; 
 const unsigned int CMD_TIMEOUT = 500; 
 const unsigned int RATE_SAMPLE_PERIOD = 400;
@@ -72,7 +72,7 @@ const unsigned int WHEEL_RATIO_SMPS = (WHEEL_RAD_MM*628/RATE_SAMPLE_PERIOD/WHEEL
 const unsigned int US_WALL_DIST=0;
 const unsigned int US_WALL_CNT_THR=100;
 const unsigned int M_COAST_TIME=100;
-const unsigned int M_WUP_PID_CNT=2;
+const unsigned int M_WUP_PID_CNT=1;
 
 #define V_NORM 10000
 
@@ -94,14 +94,14 @@ const unsigned int M_WUP_PID_CNT=2;
 */
 
 // for 7.5v
-#define M_POW_LOW   70
+#define M_POW_LOW   30
 #define M_POW_HIGH 100
-#define M_POW_MAX  200
+#define M_POW_MAX  120
 
-#define M_PID_KP   1
+#define M_PID_KP   2
 #define M_PID_KI   0
-#define M_PID_KD   1
-#define M_PID_DIV  2
+#define M_PID_KD   2
+#define M_PID_DIV  4
 
 #define BUF_SIZE 16
 byte buf[BUF_SIZE];
@@ -157,13 +157,13 @@ volatile uint8_t EncOverflow=0;
 uint8_t pid_cnt=0;
 uint8_t pid_log_ptr=0;
 
-struct LogRec {
+struct __attribute__((__packed__)) LogRec {
   uint8_t cmd_id;       // ref to cmd id
   uint8_t pid_log_idx;   
   uint8_t ctime;         // pid interval 
   uint8_t pid_log_rate[2];
   int8_t pid_log_derr[2];
-  int8_t pid_log_ierr[2];
+  //int8_t pid_log_ierr[2];
   uint8_t pid_log_pow[2];
 } logr[PID_LOG_SZ];
 
@@ -175,8 +175,9 @@ void setup()
     digitalWrite(ports[i], LOW); 
     pinMode(ports[i], OUTPUT);
   }
-  //analogFrequency(100);
-  analogFrequency(255);
+  analogFrequency(32);
+  //analogFrequency(100); // better
+  //analogFrequency(255); // bad
  
   pinMode(ENC1_IN, INPUT);     
   attachInterrupt(ENC1_IN, encodeInterrupt_1, CHANGE); 
@@ -243,7 +244,7 @@ void loop()
   }  
   
   if(ReadSerialCommand()) {
-    cmdResult = Parse(); // postpone cmd report for 100ms
+    cmdResult = Parse(); 
     bytes = 0; // empty input buffer (only one command at a time)
     cmd_id++;
     
@@ -278,7 +279,7 @@ void loop()
       nx=0; ny=V_NORM;
       tx=-V_NORM;ty=0;
     }
-    //delay(RESP_TIMEOUT);
+    delay(RESP_TIMEOUT);
     readUSDist(); 
     Notify(); // added 06.10.2014
   }
@@ -320,7 +321,7 @@ void Notify() {
       }
       break; 
     case EnumCmdTest:       
-      addJson("TB", calib_enc_rate); addJson("TD", last_dur); addJsonArr8U("R", last_enc_rate); //addJsonArr8U("EC", enc_cnt);
+      addJson("TB", calib_enc_rate); addJson("TD", last_dur); addJsonArr8U("R", last_enc_rate); addJsonArr8U("EC", (uint8_t *)enc_cnt);
       addJson("OVF", (int16_t)(EncOverflow));
       addJson("U", (int16_t)(us_dist));
       addJson("UD", (int16_t)(us_meas_dur));
@@ -356,7 +357,7 @@ void Notify() {
         Serial.print(logr[i].pid_log_idx);Serial.print(":"); Serial.print(logr[i].cmd_id);Serial.print(":"); Serial.print(logr[i].ctime); Serial.print(":"); 
         Serial.print("("); Serial.print(logr[i].pid_log_rate[0]);Serial.print(","); Serial.print(logr[i].pid_log_rate[1]); Serial.print(")"); 
         Serial.print("("); Serial.print(trg_rate[0]-logr[i].pid_log_rate[0]);Serial.print(","); Serial.print(trg_rate[1]-logr[i].pid_log_rate[1]); Serial.print(")"); 
-        Serial.print("("); Serial.print(logr[i].pid_log_ierr[0]);Serial.print(","); Serial.print(logr[i].pid_log_ierr[1]); Serial.print(")"); 
+//        Serial.print("("); Serial.print(logr[i].pid_log_ierr[0]);Serial.print(","); Serial.print(logr[i].pid_log_ierr[1]); Serial.print(")"); 
         Serial.print("("); Serial.print(logr[i].pid_log_derr[0]);Serial.print(","); Serial.print(logr[i].pid_log_derr[1]); Serial.print(")"); 
         Serial.print("("); Serial.print(logr[i].pid_log_pow[0]);Serial.print(","); Serial.print(logr[i].pid_log_pow[1]); Serial.print(");"); 
         logr[i].pid_log_idx=255; // mark as empty      
@@ -452,7 +453,8 @@ void PID(uint16_t ctime)
       if(pid_cnt>=M_WUP_PID_CNT) { // do not correct for the first cycles - ca 100-200ms(warmup)
         err = trg_rate[i]-last_enc_rate[i];
         err_d = err-last_err[i];
-        int_err[i]=int_err[i]/2+err;      
+        //int_err[i]=int_err[i]/2+err;
+        int_err[i]=0;      
         int16_t pow=cur_power[i]+((int16_t)err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI+(int16_t)err_d*M_PID_KD)/M_PID_DIV;
         if(pow<0) pow=0;
         if(pow>M_POW_MAX) pow=M_POW_MAX;
@@ -463,7 +465,7 @@ void PID(uint16_t ctime)
       // log entry
       logr[pid_log_ptr].pid_log_rate[i]=last_enc_rate[i];
       logr[pid_log_ptr].pid_log_derr[i]=err_d;
-      logr[pid_log_ptr].pid_log_ierr[i]=int_err[i];
+      //logr[pid_log_ptr].pid_log_ierr[i]=int_err[i];
       //logr[pid_log_ptr].pid_log_pow[i]=pow;      
       logr[pid_log_ptr].pid_log_pow[i]=cur_power[i];      
     } 
@@ -547,8 +549,8 @@ void encodeInterrupt_1() {
   if(es1==v) return;
   es1=v;  
   if(!IsDrive) return; 
-  enc_cnt[0]++; 
-  if(enc_cnt[0]>123) EncOverflow&=0x01;
+  if(enc_cnt[0]==255) EncOverflow|=0x01;
+  else enc_cnt[0]++; 
 }
 
 void encodeInterrupt_2() {
@@ -556,8 +558,8 @@ void encodeInterrupt_2() {
   if(es2==v) return;
   es2=v;  
   if(!IsDrive) return;
-  enc_cnt[1]++; 
-  if(enc_cnt[1]>123) EncOverflow&=0x02;
+  if(enc_cnt[1]==255) EncOverflow|=0x01;
+  else enc_cnt[1]++; 
 }
 
 //=======================================
@@ -586,12 +588,12 @@ boolean ReadSerialCommand()
 }
 
 int8_t Parse()
-// Expect: "DLR=100,100"
+// Expect: "De=100,100"
 {  
   byte pos;
   int m;
   
-  if((pos=Match("DLR"))) {    
+  if((pos=Match("D"))) {    
     boolean chg=false;
     if(pos>=bytes || buf[pos]!='=') return EnumErrorBadSyntax;
     for(int i=0; i<2; i++) {      
@@ -605,13 +607,13 @@ int8_t Parse()
     }
     if(!drv_dir[0] && !drv_dir[1]) return EnumCmdStop;
     return chg ? EnumCmdDrive : EnumCmdContinueDrive;
-  } else if((pos=Match("Test"))) {
+  } else if((pos=Match("T"))) {
     return EnumCmdTest;
   }
-  else if((pos=Match("Log"))) {
+  else if((pos=Match("L"))) {
     return EnumCmdLog;
   } 
-  else if((pos=Match("Rst"))) {
+  else if((pos=Match("R"))) {
     return EnumCmdRst;
   }
   else return EnumErrorUnknown;

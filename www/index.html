@@ -198,14 +198,7 @@ function path(vx, vy) {
 function onAjaxSuccess(data)
 {
   term.echo(JSON.stringify(data));
-  
-  /*
-  dispIntVal("#PL", data.PL, 30, 200, gauge_PL); 
-  dispIntVal("#PR", data.PR, 30, 200, gauge_PR);
-  dispIntVal("#RL", data.WL, 10, 400, gauge_RL);
-  dispIntVal("#RR", data.WR, 10, 400, gauge_RR);
-  */
-  
+   
   if (typeof(data.P) !== 'undefined') {
 	dispIntVal("#PL", data.P[0], 30, 200, gauge_PL); 
 	dispIntVal("#PR", data.P[1], 30, 200, gauge_PR);
@@ -257,25 +250,18 @@ function execcmd(code) {
 	var cmd="?";
 	var doStop=0;
 	switch(code) {
-		case 87:cmd="DLR=100,100"; break;
-		//case '65':cmd="DLR=-100,100"; break;
-		case 65:cmd="DLR=-20,60"; break;
-		case 83:cmd="DLR=-100,-100"; break;
-		//case '68':cmd="DLR=100,-100"; break;
-		case 68:cmd="DLR=60,-20"; break;
-
-		case 81:cmd="DLR=60,100"; break;
-		case 69:cmd="DLR=100,60"; break;
-		
-		case 90:cmd="DLR=0,0"; doStop=1; break;
-		
-		case 188:cmd="DLR=-100,100"; break;
-		case 190:cmd="DLR=100,-100"; break;
-		
-		
-		case 84:cmd="Test"; break;
-		case 76:cmd="Log"; break;
-		case 82:cmd="Rst"; x_prev=y_prev=0; ctx_m.clearRect(0, 0, x0_m*2, y0_m*2); break; 
+		case 87:cmd="D=100,100"; break;
+		case 65:cmd="D=-20,20"; break;
+		case 83:cmd="D=-100,-100"; break;
+		case 68:cmd="D=20,-20"; break;
+		case 81:cmd="D=50,100"; break;
+		case 69:cmd="D=100,50"; break;
+		case 90:cmd="D=0,0"; doStop=1; break;
+		case 188:cmd="D=-100,100"; break;
+		case 190:cmd="D=100,-100"; break;
+		case 84:cmd="T"; break;
+		case 76:cmd="L"; break;
+		case 82:cmd="R"; x_prev=y_prev=0; ctx_m.clearRect(0, 0, x0_m*2, y0_m*2); break; 
 		default: cmd="?"; break;
 		}
 	if(cmd==="?") {
