@@ -224,10 +224,7 @@ void loop()
   if ( cycleTime < lastCycleTime) lastCycleTime=0; // wraparound   
   if ( cycleTime - lastCycleTime >= CYCLE_TIMEOUT) { // working cycle    
   
-  //readUSDist();
-  
   if (IsDrive) {    
-  //    readUSDist();      
       if (CheckCommandTimeout() 
        /*|| (us_wall_cnt_up>=US_WALL_CNT_THR && drv_dir[0]==1 && drv_dir[1]==1) // wall ahead && forwared drive*/
         ) StopDrive();
@@ -237,6 +234,7 @@ void loop()
         if ( ctime >= PID_TIMEOUT) { // PID cycle    
           PID(ctime); 
           lastPidTime=cycleTime;
+          readUSDist(); 
         }
       }
     }
@@ -280,8 +278,8 @@ void loop()
       tx=-V_NORM;ty=0;
     }
     delay(RESP_TIMEOUT);
-    readUSDist(); 
-    Notify(); // added 06.10.2014
+    //readUSDist(); 
+    Notify(); 
   }
 }
 
