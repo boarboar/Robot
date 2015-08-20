@@ -66,9 +66,9 @@ const unsigned int CMD_TIMEOUT = 500;
 const unsigned int RATE_SAMPLE_PERIOD = 400;
 const unsigned int WHEEL_CHGSTATES = 40;
 const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
-const unsigned int WHEEL_RAD_MM = 33; // 34?
-const unsigned int WHEEL_BASE_MM = 140;// approx... carriage base 145 - too high, 135 - too low
-const unsigned int WHEEL_RATIO_SMPS = (WHEEL_RAD_MM*628/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
+const unsigned int WHEEL_RAD_MM_10 = 330; // 34?
+const unsigned int WHEEL_BASE_MM_10 = 1400;// approx... carriage base 145 - too high, 135 - too low
+const unsigned int WHEEL_RATIO_SMPS_10 = (WHEEL_RAD_MM_10/10*628/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
 const unsigned int US_WALL_DIST=0;
 const unsigned int US_WALL_CNT_THR=100;
 const unsigned int M_COAST_TIME=100;
@@ -76,7 +76,7 @@ const unsigned int M_WUP_PID_CNT=1;
 
 #define V_NORM 10000
 
-#define CHGST_TO_MM(CNT)  ((int32_t)(CNT)*62832*WHEEL_RAD_MM/WHEEL_CHGSTATES/10000)
+#define CHGST_TO_MM_10(CNT)  ((int32_t)(CNT)*62832*WHEEL_RAD_MM_10/WHEEL_CHGSTATES/10000)
 #define STARTDRIVE() (cmdResult==EnumCmdDrive || (cmdResult==EnumCmdContinueDrive && !IsDrive))
 
 
@@ -296,20 +296,29 @@ void Notify() {
       addJsonArr16_2("P", cur_power[0], cur_power[1]);
       addJsonArr16_2("T", trg_rate[0], trg_rate[1]);
       addJsonArr16_2("R", last_enc_rate[0], last_enc_rate[1]);
-      addJsonArr16_2("W", last_enc_rate[0]*WHEEL_RATIO_RPM, last_enc_rate[1]*WHEEL_RATIO_RPM); // in cm
+      addJsonArr16_2("W", last_enc_rate[0]*WHEEL_RATIO_RPM, last_enc_rate[1]*WHEEL_RATIO_RPM); 
+      
       int16_t s[2];
       for(uint8_t i=0; i<2; i++) {         
         if(drv_dir[i]==0) s[i]=0;
         else {
-          s[i]=last_enc_rate[i]*WHEEL_RATIO_SMPS;
+          s[i]=last_enc_rate[i]*WHEEL_RATIO_SMPS_10;
           if(drv_dir[i]==2) s[i]=-s[i];
         } 
       }
+      
       addJson("S", (s[0]+s[1])/2);
+      /*
       addJson("D", (int16_t)(dist/10));
       addJson("F", (int16_t)(diff/10));
       addJsonArr16_2("N", (int16_t)nx, (int16_t)ny); // in cm
       addJsonArr16_2("X", (int16_t)(x/10), (int16_t)(y/10)); // in cm
+      */
+      addJson("D", (int16_t)(dist/100));
+      addJson("F", (int16_t)(diff/100));
+      addJsonArr16_2("N", (int16_t)nx, (int16_t)ny); // in cm
+      addJsonArr16_2("X", (int16_t)(x/100), (int16_t)(y/100)); // in cm
+
       addJson("U", (int16_t)(us_dist));
       addJson("UC", (int16_t)(us_wall_cnt_up));
       /*
@@ -319,7 +328,10 @@ void Notify() {
       }
       break; 
     case EnumCmdTest:       
-      addJson("TB", calib_enc_rate); addJson("TD", last_dur); addJsonArr8U("R", last_enc_rate); addJsonArr8U("EC", (uint8_t *)enc_cnt);
+      addJson("TB", calib_enc_rate); addJson("TD", last_dur); 
+      //addJsonArr8U("R", last_enc_rate); addJsonArr8U("EC", (uint8_t *)enc_cnt);
+      addJsonArr16_2("R", last_enc_rate[0], last_enc_rate[1]);
+      addJsonArr16_2("EC", enc_cnt[0], enc_cnt[1]);
       addJson("OVF", (int16_t)(EncOverflow));
       addJson("U", (int16_t)(us_dist));
       addJson("UD", (int16_t)(us_meas_dur));
@@ -445,7 +457,7 @@ void PID(uint16_t ctime)
       int8_t err=0, err_d=0;
       if(drv_dir[i]==2) s[i]=-enc_cnt[i];
       else s[i]=enc_cnt[i];
-      s[i]=CHGST_TO_MM(s[i]);
+      s[i]=CHGST_TO_MM_10(s[i]);
       last_enc_rate[i]=(uint8_t)((uint16_t)enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
       enc_cnt[i]=0; 
       if(pid_cnt>=M_WUP_PID_CNT) { // do not correct for the first cycles - ca 100-200ms(warmup)
@@ -471,8 +483,8 @@ void PID(uint16_t ctime)
     dist+=(s[0]+s[1])/2; // drive distance, mm  
     diff+=(s[0]-s[1])/2; // drive diff, mm  
     
-    tx += nx*(s[0]-s[1])/WHEEL_BASE_MM;
-    ty += ny*(s[0]-s[1])/WHEEL_BASE_MM;
+    tx += nx*(s[0]-s[1])/WHEEL_BASE_MM_10;
+    ty += ny*(s[0]-s[1])/WHEEL_BASE_MM_10;
 /*
 // opt1 start    
     uint16_t tl=isqrt32(tx*tx+ty*ty);
@@ -656,6 +668,7 @@ byte bctoi(byte index, int *val)
   Serial.print(",");
  }
  
+ /*
  void addJsonArr8U(const char *name, uint8_t *va) {
   for(int i=0; i<2; i++) { 
     Serial.print("\"");
@@ -666,7 +679,9 @@ byte bctoi(byte index, int *val)
     Serial.print(",");
   }
  }
+*/
 
+ 
  void addJsonArr16_2(const char *name, int16_t v1, int16_t v2) {
     Serial.print("\"");
     Serial.print(name);
