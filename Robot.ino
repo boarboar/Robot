@@ -397,7 +397,8 @@ void readUSDist() {
   digitalWrite(US_OUT, LOW);
   delayMicroseconds(2);
   digitalWrite(US_OUT, HIGH);
-  delayMicroseconds(10);
+  // delayMicroseconds(10);
+  delayMicroseconds(5);
   digitalWrite(US_OUT, LOW);
   uint32_t ms=millis();
   uint32_t d=pulseIn(US_IN, HIGH, 25000);
