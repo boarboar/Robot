@@ -565,7 +565,7 @@ void encodeInterrupt_1() {
   uint8_t v=digitalRead(ENC1_IN);
   if(es1==v) return;
   es1=v;  
-  if(!IsDrive) return; 
+  //if(!IsDrive) return; 
   if(enc_cnt[0]==255) EncOverflow|=0x01;
   else enc_cnt[0]++; 
 }
@@ -574,7 +574,7 @@ void encodeInterrupt_2() {
   uint8_t v=digitalRead(ENC2_IN);  
   if(es2==v) return;
   es2=v;  
-  if(!IsDrive) return;
+  //if(!IsDrive) return;
   if(enc_cnt[1]==255) EncOverflow|=0x01;
   else enc_cnt[1]++; 
 }
