@@ -442,11 +442,12 @@ void StartDrive()
 void StopDrive() 
 {
   if(!IsDrive) return;
-  IsDrive = false;
+  //IsDrive = false;
   Drive(0, 0, 0, 0);
   delay(M_COAST_TIME);  
   unsigned long n=millis();
   if(n>lastPidTime) PID(n-lastPidTime); // finalize for the sake of dead reckoning
+  IsDrive = false;
   digitalWrite(RED_LED, LOW);  
   last_enc_rate[0]=last_enc_rate[1]=0;
   cur_power[0]=cur_power[1]=0;
