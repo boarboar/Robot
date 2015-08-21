@@ -153,7 +153,7 @@ boolean IsDrive = false;
 volatile uint8_t EncOverflow=0;
 
 //#define PID_LOG_SZ 8
-#define PID_LOG_SZ 12
+#define PID_LOG_SZ 10
 uint8_t pid_cnt=0;
 uint8_t pid_log_ptr=0;
 
@@ -161,6 +161,7 @@ struct __attribute__((__packed__)) LogRec {
   uint8_t cmd_id;       // ref to cmd id
   uint8_t pid_log_idx;   
   uint8_t ctime;         // pid interval 
+  uint8_t ec[2];
   uint8_t pid_log_rate[2];
   int8_t pid_log_derr[2];
   //int8_t pid_log_ierr[2];
@@ -276,6 +277,7 @@ void loop()
       x=y=0;
       nx=0; ny=V_NORM;
       tx=-V_NORM;ty=0;
+      dist=diff=0;
     }
     delay(RESP_TIMEOUT);
     //readUSDist(); 
@@ -365,6 +367,7 @@ void Notify() {
       for(i=0; i<PID_LOG_SZ; i++) {
         if(logr[i].pid_log_idx!=255) { // if not empty
         Serial.print(logr[i].pid_log_idx);Serial.print(":"); Serial.print(logr[i].cmd_id);Serial.print(":"); Serial.print(logr[i].ctime); Serial.print(":"); 
+        Serial.print("("); Serial.print(logr[i].ec[0]);Serial.print(","); Serial.print(logr[i].ec[1]); Serial.print(")"); 
         Serial.print("("); Serial.print(logr[i].pid_log_rate[0]);Serial.print(","); Serial.print(logr[i].pid_log_rate[1]); Serial.print(")"); 
         Serial.print("("); Serial.print(trg_rate[0]-logr[i].pid_log_rate[0]);Serial.print(","); Serial.print(trg_rate[1]-logr[i].pid_log_rate[1]); Serial.print(")"); 
 //        Serial.print("("); Serial.print(logr[i].pid_log_ierr[0]);Serial.print(","); Serial.print(logr[i].pid_log_ierr[1]); Serial.print(")"); 
@@ -454,12 +457,14 @@ void PID(uint16_t ctime)
 {
   if(ctime>0) {
     int16_t s[2];
+    int16_t d;
     for(uint8_t i=0; i<2; i++) {
       int8_t err=0, err_d=0;
       if(drv_dir[i]==2) s[i]=-enc_cnt[i];
       else s[i]=enc_cnt[i];
-      s[i]=CHGST_TO_MM_10(s[i]);
+      //s[i]=CHGST_TO_MM_10(s[i]);
       last_enc_rate[i]=(uint8_t)((uint16_t)enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
+      logr[pid_log_ptr].ec[i]=enc_cnt[i];
       enc_cnt[i]=0; 
       if(pid_cnt>=M_WUP_PID_CNT) { // do not correct for the first cycles - ca 100-200ms(warmup)
         err = trg_rate[i]-last_enc_rate[i];
@@ -481,11 +486,11 @@ void PID(uint16_t ctime)
       logr[pid_log_ptr].pid_log_pow[i]=cur_power[i];      
     } 
   if(s[0] || s[1]) {  
-    dist+=(s[0]+s[1])/2; // drive distance, mm  
-    diff+=(s[0]-s[1])/2; // drive diff, mm  
-    
-    tx += nx*(s[0]-s[1])/WHEEL_BASE_MM_10;
-    ty += ny*(s[0]-s[1])/WHEEL_BASE_MM_10;
+    d = CHGST_TO_MM_10(s[0]-s[1]);
+    dist+=CHGST_TO_MM_10(s[0]+s[1])/2; // drive distance, 10th-mm  
+    diff+=d/2; // drive diff, 10th-mm      
+    tx += nx*d/WHEEL_BASE_MM_10;
+    ty += ny*d/WHEEL_BASE_MM_10;
 /*
 // opt1 start    
     uint16_t tl=isqrt32(tx*tx+ty*ty);
