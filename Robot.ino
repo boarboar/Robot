@@ -71,7 +71,7 @@ const unsigned int WHEEL_BASE_MM_10 = 1400;// approx... carriage base 145 - too 
 const unsigned int WHEEL_RATIO_SMPS_10 = (WHEEL_RAD_MM_10/10*628/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
 const unsigned int US_WALL_DIST=0;
 const unsigned int US_WALL_CNT_THR=100;
-const unsigned int M_COAST_TIME=100;
+const unsigned int M_COAST_TIME=400;
 const unsigned int M_WUP_PID_CNT=1;
 
 #define V_NORM 10000
@@ -278,6 +278,8 @@ void loop()
       nx=0; ny=V_NORM;
       tx=-V_NORM;ty=0;
       dist=diff=0;
+    } else if(cmdResult==EnumCmdTest) {
+      readUSDist();
     }
     delay(RESP_TIMEOUT);
     //readUSDist(); 
