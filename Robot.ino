@@ -55,10 +55,11 @@
 #define US_OUT   P1_7
 
 // common vars 
-const unsigned int CYCLE_TIMEOUT = 50;
+//const unsigned int CYCLE_TIMEOUT = 50;
 //const unsigned int PID_TIMEOUT = (CYCLE_TIMEOUT*4);
 //const unsigned int PID_TIMEOUT = CYCLE_TIMEOUT;
-const unsigned int PID_TIMEOUT = CYCLE_TIMEOUT*2;
+//const unsigned int PID_TIMEOUT = CYCLE_TIMEOUT*2;
+const unsigned int PID_TIMEOUT = 100;
 //const unsigned int RESP_TIMEOUT = 90;
 const unsigned int RESP_TIMEOUT = 25; // C_T+R_T >= 75ms
 //const unsigned int CMD_TIMEOUT = 1000; 
@@ -108,7 +109,7 @@ byte buf[BUF_SIZE];
 byte bytes = 0;
 
 uint32_t lastCommandTime;
-uint32_t lastCycleTime;
+//uint32_t lastCycleTime;
 uint32_t lastPidTime;
 uint16_t last_dur=0;
 uint16_t us_meas_dur=0;
@@ -193,11 +194,11 @@ void setup()
     digitalWrite(RED_LED, HIGH); delay(100); digitalWrite(RED_LED, LOW); 
   }
   Serial.begin(TTY_SPEED);
-  lastCommandTime = lastCycleTime = millis();  
+  //lastCommandTime = lastCycleTime = millis();  
   digitalWrite(RED_LED, HIGH);  
    
   // calibration sequence
-  lastCommandTime=millis();
+  //lastCommandTime=millis();
   IsDrive=1; 
   // warmup (TODO - make step up)
   Drive(1, M_POW_HIGH/2, 1, M_POW_HIGH/2);
@@ -217,17 +218,21 @@ void setup()
   for(uint8_t i=0; i<PID_LOG_SZ; i++) logr[i].pid_log_idx=255;
 
   while (Serial.available()) Serial.read();  // eat garbage
+  
+  lastCommandTime = lastPidTime = millis();  
+
 }
 
 void loop()
 {
   uint32_t cycleTime = millis();
+  /*
   if ( cycleTime < lastCycleTime) lastCycleTime=0; // wraparound   
   if ( cycleTime - lastCycleTime >= CYCLE_TIMEOUT) { // working cycle    
   
   if (IsDrive) {    
       if (CheckCommandTimeout() 
-       /*|| (us_wall_cnt_up>=US_WALL_CNT_THR && drv_dir[0]==1 && drv_dir[1]==1) // wall ahead && forwared drive*/
+       //|| (us_wall_cnt_up>=US_WALL_CNT_THR && drv_dir[0]==1 && drv_dir[1]==1) // wall ahead && forwared drive 
         ) StopDrive();
       else { 
         if ( cycleTime < lastPidTime) lastPidTime=0; // wraparound   
@@ -240,8 +245,26 @@ void loop()
       }
     }
     lastCycleTime=cycleTime; 
-  }  
+  } 
+ */ 
   
+  
+  if ( cycleTime < lastPidTime) lastPidTime=0; // wraparound, not correct   
+  uint16_t ctime = cycleTime - lastPidTime;
+  if ( ctime >= PID_TIMEOUT) { // PID cycle    
+    if (IsDrive) {    
+      if (CheckCommandTimeout() 
+       //|| (us_wall_cnt_up>=US_WALL_CNT_THR && drv_dir[0]==1 && drv_dir[1]==1) // wall ahead && forwared drive 
+        ) StopDrive();
+      else { 
+        PID(ctime); 
+      }
+    } // IsDrive
+    readUSDist(); 
+    lastPidTime=cycleTime;
+  } // PID cycle 
+  
+        
   if(ReadSerialCommand()) {
     cmdResult = Parse(); 
     bytes = 0; // empty input buffer (only one command at a time)
@@ -250,7 +273,8 @@ void loop()
     test_val=0;
     
     if(STARTDRIVE()) {
-        lastCycleTime=lastPidTime=millis(); //NB!
+        //lastCycleTime=
+        lastPidTime=millis(); //NB!
         StartDrive();
         last_dur=0;
         lastCommandTime = millis();
@@ -279,12 +303,11 @@ void loop()
       tx=-V_NORM;ty=0;
       dist=diff=0;
     } else if(cmdResult==EnumCmdTest) {
-      readUSDist();
+      //readUSDist();
     }
     delay(RESP_TIMEOUT);
-    //readUSDist(); 
     Notify(); 
-  }
+  } // read serial
 }
 
 void Notify() {
