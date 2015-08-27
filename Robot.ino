@@ -116,7 +116,7 @@ uint16_t us_meas_dur=0;
 
 uint8_t cmd_id=0;
 
-uint8_t test_val=0;
+//uint8_t test_val=0;
 
 int32_t dist=0;
 int16_t diff=0;
@@ -131,6 +131,7 @@ float tx=-1.0, ty=0.0;
 volatile int16_t us_dist=0; 
 volatile int8_t us_wall_cnt_up=0; 
 volatile int8_t us_wall_cnt_dn=0; 
+volatile uint8_t v_enc_cnt[2]={0,0}; 
 
 enum EnumCmd { EnumCmdDrive=1, EnumCmdTest=2, EnumCmdStop=3, EnumCmdLog=4, EnumCmdContinueDrive=5, EnumCmdRst=6 };  
 enum EnumError { EnumErrorUnknown=-1, EnumErrorBadSyntax=-2, EnumErrorBadParam=-3, EnumErrorNone=-100};  
@@ -142,7 +143,7 @@ uint8_t cur_power[2]={0,0};
 uint8_t cmd_power[2]={0,0}; 
 uint8_t trg_rate[2]={0,0}; 
 
-volatile uint8_t enc_cnt[2]={0,0}; 
+uint8_t last_enc_cnt[2]={0,0}; 
 uint8_t last_enc_rate[2]={0,0}; 
 uint8_t calib_enc_rate=0; // target rate (counts per RATE_SAMPLE_PERIOD) for 100 power
 
@@ -208,9 +209,11 @@ void setup()
   Drive(1, M_POW_HIGH, 1, M_POW_HIGH);
   delay(RATE_SAMPLE_PERIOD);   
   // now sample for twice the time
-  enc_cnt[0]=enc_cnt[1]=0;  
+  //enc_cnt[0]=enc_cnt[1]=0;  
+  ReadEnc();
   delay(RATE_SAMPLE_PERIOD*2); // calibration
-  calib_enc_rate = (enc_cnt[0]+enc_cnt[1])/4;
+  ReadEnc();
+  calib_enc_rate = (last_enc_cnt[0]+last_enc_cnt[1])/4;
   StopDrive();
   
   digitalWrite(RED_LED, LOW);
@@ -225,33 +228,11 @@ void setup()
 
 void loop()
 {
-  uint32_t cycleTime = millis();
-  /*
-  if ( cycleTime < lastCycleTime) lastCycleTime=0; // wraparound   
-  if ( cycleTime - lastCycleTime >= CYCLE_TIMEOUT) { // working cycle    
-  
-  if (IsDrive) {    
-      if (CheckCommandTimeout() 
-       //|| (us_wall_cnt_up>=US_WALL_CNT_THR && drv_dir[0]==1 && drv_dir[1]==1) // wall ahead && forwared drive 
-        ) StopDrive();
-      else { 
-        if ( cycleTime < lastPidTime) lastPidTime=0; // wraparound   
-        uint16_t ctime = cycleTime - lastPidTime;
-        if ( ctime >= PID_TIMEOUT) { // PID cycle    
-          PID(ctime); 
-          lastPidTime=cycleTime;
-          readUSDist(); 
-        }
-      }
-    }
-    lastCycleTime=cycleTime; 
-  } 
- */ 
-  
-  
+  uint32_t cycleTime = millis();  
   if ( cycleTime < lastPidTime) lastPidTime=0; // wraparound, not correct   
   uint16_t ctime = cycleTime - lastPidTime;
   if ( ctime >= PID_TIMEOUT) { // PID cycle    
+    ReadEnc();
     if (IsDrive) {    
       if (CheckCommandTimeout() 
        //|| (us_wall_cnt_up>=US_WALL_CNT_THR && drv_dir[0]==1 && drv_dir[1]==1) // wall ahead && forwared drive 
@@ -263,27 +244,21 @@ void loop()
     readUSDist(); 
     lastPidTime=cycleTime;
   } // PID cycle 
-  
-        
+          
   if(ReadSerialCommand()) {
     cmdResult = Parse(); 
     bytes = 0; // empty input buffer (only one command at a time)
-    cmd_id++;
-    
-    test_val=0;
-    
+    cmd_id++;  
+    //test_val=0;    
     if(STARTDRIVE()) {
+        lastCommandTime = millis();        
         //lastCycleTime=
         lastPidTime=millis(); //NB!
         StartDrive();
         last_dur=0;
-        lastCommandTime = millis();
-        
         pid_cnt=0;
         pid_log_ptr=0;
-
-        test_val=1;
-
+        //test_val=1;
       /*
       if(us_wall_cnt_up>=US_WALL_CNT_THR && drv_dir[0]==1 && drv_dir[1]==1) {
         last_dur=millis()-lastCommandTime;
@@ -356,9 +331,8 @@ void Notify() {
       break; 
     case EnumCmdTest:       
       addJson("TB", calib_enc_rate); addJson("TD", last_dur); 
-      //addJsonArr8U("R", last_enc_rate); addJsonArr8U("EC", (uint8_t *)enc_cnt);
       addJsonArr16_2("R", last_enc_rate[0], last_enc_rate[1]);
-      addJsonArr16_2("EC", enc_cnt[0], enc_cnt[1]);
+      addJsonArr16_2("EC", last_enc_cnt[0], last_enc_cnt[1]);
       addJson("OVF", (int16_t)(EncOverflow));
       addJson("U", (int16_t)(us_dist));
       addJson("UD", (int16_t)(us_meas_dur));
@@ -455,7 +429,8 @@ void StartDrive()
     last_err[i]=0;
     //int_err[i]=0; // ?
   }
-  enc_cnt[0]=enc_cnt[1]=0;  
+  //enc_cnt[0]=enc_cnt[1]=0;  
+  ReadEnc();
   Drive(drv_dir[0], cur_power[0], drv_dir[1], cur_power[1]); // change interface
   if (!IsDrive)
   {
@@ -469,9 +444,9 @@ void StopDrive()
   if(!IsDrive) return;
   //IsDrive = false;
   Drive(0, 0, 0, 0);
-  delay(M_COAST_TIME);  
-  unsigned long n=millis();
-  if(n>lastPidTime) PID(n-lastPidTime); // finalize for the sake of dead reckoning
+//  delay(M_COAST_TIME);  
+//  unsigned long n=millis();
+//  if(n>lastPidTime) PID(n-lastPidTime); // finalize for the sake of dead reckoning
   IsDrive = false;
   digitalWrite(RED_LED, LOW);  
   last_enc_rate[0]=last_enc_rate[1]=0;
@@ -479,38 +454,20 @@ void StopDrive()
   //us_wall_cnt=0;
 }
 
-void PID(uint16_t ctime)
+void ReadEnc()
 {
-  if(ctime>0) {
-    int16_t s[2];
-    int16_t d;
-    for(uint8_t i=0; i<2; i++) {
-      int8_t err=0, err_d=0;
-      if(drv_dir[i]==2) s[i]=-enc_cnt[i];
-      else s[i]=enc_cnt[i];
-      //s[i]=CHGST_TO_MM_10(s[i]);
-      last_enc_rate[i]=(uint8_t)((uint16_t)enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
-      logr[pid_log_ptr].ec[i]=enc_cnt[i];
-      enc_cnt[i]=0; 
-      if(pid_cnt>=M_WUP_PID_CNT) { // do not correct for the first cycles - ca 100-200ms(warmup)
-        err = trg_rate[i]-last_enc_rate[i];
-        err_d = err-last_err[i];
-        //int_err[i]=int_err[i]/2+err;
-        int_err[i]=0;      
-        int16_t pow=cur_power[i]+((int16_t)err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI+(int16_t)err_d*M_PID_KD)/M_PID_DIV;
-        if(pow<0) pow=0;
-        if(pow>M_POW_MAX) pow=M_POW_MAX;
-        if(err) analogWrite(i==0 ? M1_EN : M2_EN , pow); 
-        cur_power[i]=pow;
-      }
-      last_err[i]=err;
-      // log entry
-      logr[pid_log_ptr].pid_log_rate[i]=last_enc_rate[i];
-      logr[pid_log_ptr].pid_log_derr[i]=err_d;
-      //logr[pid_log_ptr].pid_log_ierr[i]=int_err[i];
-      //logr[pid_log_ptr].pid_log_pow[i]=pow;      
-      logr[pid_log_ptr].pid_log_pow[i]=cur_power[i];      
-    } 
+  int16_t s[2];
+  int16_t d;
+
+  for(uint8_t i=0; i<2; i++) {
+    last_enc_cnt[i]=v_enc_cnt[i];
+    v_enc_cnt[i] = 0;
+    if(drv_dir[i]==2) s[i]=-last_enc_cnt[i];
+    else s[i]=last_enc_cnt[i];
+  }
+
+    // dead reckoning
+  
   if(s[0] || s[1]) {  
     d = CHGST_TO_MM_10(s[0]-s[1]);
     dist+=CHGST_TO_MM_10(s[0]+s[1])/2; // drive distance, 10th-mm  
@@ -553,8 +510,37 @@ void PID(uint16_t ctime)
     x+=(int32_t)nx*(s[0]+s[1])/(2*V_NORM);
     y+=(int32_t)ny*(s[0]+s[1])/(2*V_NORM);
   }
-  // log advance/wrap  
-  
+
+}
+
+void PID(uint16_t ctime)
+{
+  if(ctime>0) {
+    for(uint8_t i=0; i<2; i++) {
+      int8_t err=0, err_d=0;
+      //s[i]=CHGST_TO_MM_10(s[i]);
+      last_enc_rate[i]=(uint8_t)((uint16_t)last_enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
+      logr[pid_log_ptr].ec[i]=last_enc_cnt[i];
+      if(pid_cnt>=M_WUP_PID_CNT) { // do not correct for the first cycles - ca 100-200ms(warmup)
+        err = trg_rate[i]-last_enc_rate[i];
+        err_d = err-last_err[i];
+        //int_err[i]=int_err[i]/2+err;
+        int_err[i]=0;      
+        int16_t pow=cur_power[i]+((int16_t)err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI+(int16_t)err_d*M_PID_KD)/M_PID_DIV;
+        if(pow<0) pow=0;
+        if(pow>M_POW_MAX) pow=M_POW_MAX;
+        if(err) analogWrite(i==0 ? M1_EN : M2_EN , pow); 
+        cur_power[i]=pow;
+      }
+      last_err[i]=err;
+      // log entry
+      logr[pid_log_ptr].pid_log_rate[i]=last_enc_rate[i];
+      logr[pid_log_ptr].pid_log_derr[i]=err_d;
+      //logr[pid_log_ptr].pid_log_ierr[i]=int_err[i];
+      //logr[pid_log_ptr].pid_log_pow[i]=pow;      
+      logr[pid_log_ptr].pid_log_pow[i]=cur_power[i];      
+    } 
+  // log advance/wrap    
   logr[pid_log_ptr].cmd_id=cmd_id;
   logr[pid_log_ptr].ctime=ctime;
   logr[pid_log_ptr].pid_log_idx=pid_cnt++;   
@@ -590,18 +576,16 @@ void encodeInterrupt_1() {
   uint8_t v=digitalRead(ENC1_IN);
   if(es1==v) return;
   es1=v;  
-  //if(!IsDrive) return; 
-  if(enc_cnt[0]==255) EncOverflow|=0x01;
-  else enc_cnt[0]++; 
+  if(v_enc_cnt[0]==255) EncOverflow|=0x01;
+  else v_enc_cnt[0]++; 
 }
 
 void encodeInterrupt_2() {
   uint8_t v=digitalRead(ENC2_IN);  
   if(es2==v) return;
   es2=v;  
-  //if(!IsDrive) return;
-  if(enc_cnt[1]==255) EncOverflow|=0x01;
-  else enc_cnt[1]++; 
+  if(v_enc_cnt[1]==255) EncOverflow|=0x01;
+  else v_enc_cnt[1]++; 
 }
 
 //=======================================
@@ -699,19 +683,6 @@ byte bctoi(byte index, int *val)
   Serial.print(value);
   Serial.print(",");
  }
- 
- /*
- void addJsonArr8U(const char *name, uint8_t *va) {
-  for(int i=0; i<2; i++) { 
-    Serial.print("\"");
-    Serial.print(name);
-    Serial.print(i?"R":"L");
-    Serial.print("\":");
-    Serial.print(va[i]);
-    Serial.print(",");
-  }
- }
-*/
 
  
  void addJsonArr16_2(const char *name, int16_t v1, int16_t v2) {
