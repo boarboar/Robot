@@ -67,8 +67,8 @@ const unsigned int CMD_TIMEOUT = 500;
 const unsigned int RATE_SAMPLE_PERIOD = 400;
 const unsigned int WHEEL_CHGSTATES = 40;
 const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
-const unsigned int WHEEL_RAD_MM_10 = 330; // 34?
-const unsigned int WHEEL_BASE_MM_10 = 1400;// approx... carriage base 145 - too high, 135 - too low
+const unsigned int WHEEL_RAD_MM_10 = 340; 
+const unsigned int WHEEL_BASE_MM_10 = 1350;// approx... carriage base 145 - too high, 135 - too low
 const unsigned int WHEEL_RATIO_SMPS_10 = (WHEEL_RAD_MM_10/10*628/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
 const unsigned int US_WALL_DIST=0;
 const unsigned int US_WALL_CNT_THR=100;
@@ -79,9 +79,6 @@ const unsigned int M_WUP_PID_CNT=1;
 
 #define CHGST_TO_MM_10(CNT)  ((int32_t)(CNT)*62832*WHEEL_RAD_MM_10/WHEEL_CHGSTATES/10000)
 #define STARTDRIVE() (cmdResult==EnumCmdDrive || (cmdResult==EnumCmdContinueDrive && !IsDrive))
-
-
-// approx=30*628/400/44 = 1
 
 // for 5v
 /*
@@ -318,7 +315,7 @@ void Notify() {
       */
       addJson("D", (int16_t)(dist/100));
       addJson("F", (int16_t)(diff/100));
-      addJsonArr16_2("N", (int16_t)nx, (int16_t)ny); // in cm
+      addJsonArr16_2("N", (int16_t)nx, (int16_t)ny); // in normval
       addJsonArr16_2("X", (int16_t)(x/100), (int16_t)(y/100)); // in cm
 
       addJson("U", (int16_t)(us_dist));
@@ -457,7 +454,7 @@ void StopDrive()
 void ReadEnc()
 {
   int16_t s[2];
-  int16_t d;
+  int16_t dd, df;
 
   for(uint8_t i=0; i<2; i++) {
     last_enc_cnt[i]=v_enc_cnt[i];
@@ -469,18 +466,18 @@ void ReadEnc()
     // dead reckoning
   
   if(s[0] || s[1]) {  
-    d = CHGST_TO_MM_10(s[0]-s[1]);
-    dist+=CHGST_TO_MM_10(s[0]+s[1])/2; // drive distance, 10th-mm  
-    diff+=d/2; // drive diff, 10th-mm      
-    tx += nx*d/WHEEL_BASE_MM_10;
-    ty += ny*d/WHEEL_BASE_MM_10;
+    dd = CHGST_TO_MM_10(s[0]+s[1]);
+    df = CHGST_TO_MM_10(s[0]-s[1]);
+    dist+=dd/2; // drive distance, 10th-mm  
+    diff+=df; // drive diff, 10th-mm      
+    tx += nx*df/WHEEL_BASE_MM_10;
+    ty += ny*df/WHEEL_BASE_MM_10;
 /*
 // opt1 start    
     uint16_t tl=isqrt32(tx*tx+ty*ty);
     tx=tx*V_NORM/tl;  
     ty=ty*V_NORM/tl;
-    nx=ty; 
-    ny=-tx;
+    nx=ty; ny=-tx;
 // opt1 end    
  */
    
@@ -507,8 +504,8 @@ void ReadEnc()
 		float dx=nx*(s1+s2)/2.0;
 		float dy=ny*(s1+s2)/2.0;		
 */
-    x+=(int32_t)nx*(s[0]+s[1])/(2*V_NORM);
-    y+=(int32_t)ny*(s[0]+s[1])/(2*V_NORM);
+    x+=(int32_t)nx*dd/(2*V_NORM);
+    y+=(int32_t)ny*dd/(2*V_NORM);
   }
 
 }
