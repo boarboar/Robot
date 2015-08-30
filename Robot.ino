@@ -67,8 +67,8 @@ const unsigned int CMD_TIMEOUT = 500;
 const unsigned int RATE_SAMPLE_PERIOD = 400;
 const unsigned int WHEEL_CHGSTATES = 40;
 const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
-const unsigned int WHEEL_RAD_MM_10 = 340; 
-const unsigned int WHEEL_BASE_MM_10 = 1350;// approx... carriage base 145 - too high, 135 - too low
+const unsigned int WHEEL_RAD_MM_10 = 350; 
+const unsigned int WHEEL_BASE_MM_10 = 1300;// approx... carriage base 145 - too high, 135 - too low
 const unsigned int WHEEL_RATIO_SMPS_10 = (WHEEL_RAD_MM_10/10*628/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
 const unsigned int US_WALL_DIST=0;
 const unsigned int US_WALL_CNT_THR=100;
@@ -553,7 +553,7 @@ void Drive(uint8_t ldir, uint8_t lpow, uint8_t rdir, uint8_t rpow)
 
 void Drive_s(uint8_t dir, uint8_t pow, int16_t p_en, uint8_t p1, uint8_t p2) 
 {
-  if(dir==0) {
+  if(dir==0 || pow==0) {
     digitalWrite(p_en, LOW); digitalWrite(p1, LOW); digitalWrite(p2, LOW); 
     return;
   }
@@ -624,11 +624,13 @@ int8_t Parse()
       pos = bctoi(pos, &m);      
       if(m<-255 || m>254) return EnumErrorBadParam;
       if(buf[pos] != (i==0 ? ',' : 0)) return EnumErrorBadSyntax;
-      if(m==0)       { if(drv_dir[i]!=0) { drv_dir[i]=0; chg=true;} cmd_power[i]=0; } 
+      //if(m==0)       { if(drv_dir[i]!=0) { drv_dir[i]=0; chg=true;} cmd_power[i]=0; } 
+      if(m==0)       { if(cmd_power[i]) { cmd_power[i]=0; chg=true;}} 
       else if (m>0)  { if(m<M_POW_LOW) m=M_POW_LOW; if(drv_dir[i]!=1 || cmd_power[i]!=m) { cmd_power[i]=m; drv_dir[i]=1; chg=true;} } 
       else           { if((-m)<M_POW_LOW) m=-M_POW_LOW; if(drv_dir[i]!=2 || cmd_power[i]!=-m) {cmd_power[i]=-m; drv_dir[i]=2; chg=true;} }  
     }
-    if(!drv_dir[0] && !drv_dir[1]) return EnumCmdStop;
+    //if(!drv_dir[0] && !drv_dir[1]) return EnumCmdStop;
+    if(!cmd_power[0] && !cmd_power[1]) return EnumCmdStop;
     return chg ? EnumCmdDrive : EnumCmdContinueDrive;
   } else if((pos=Match("T"))) {
     return EnumCmdTest;
