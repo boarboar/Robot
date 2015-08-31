@@ -68,7 +68,7 @@ const unsigned int RATE_SAMPLE_PERIOD = 400;
 const unsigned int WHEEL_CHGSTATES = 40;
 const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
 const unsigned int WHEEL_RAD_MM_10 = 350; 
-const unsigned int WHEEL_BASE_MM_10 = 1300;// approx... carriage base 145 - too high, 135 - too low
+const unsigned int WHEEL_BASE_MM_10 = 1400;// approx... carriage base 145 - too high, 135 - too low
 const unsigned int WHEEL_RATIO_SMPS_10 = (WHEEL_RAD_MM_10/10*628/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
 const unsigned int US_WALL_DIST=0;
 const unsigned int US_WALL_CNT_THR=100;
@@ -472,15 +472,15 @@ void ReadEnc()
     diff+=df; // drive diff, 10th-mm      
     tx += nx*df/WHEEL_BASE_MM_10;
     ty += ny*df/WHEEL_BASE_MM_10;
-/*
+
 // opt1 start    
     uint16_t tl=isqrt32(tx*tx+ty*ty);
     tx=tx*V_NORM/tl;  
     ty=ty*V_NORM/tl;
     nx=ty; ny=-tx;
 // opt1 end    
- */
-   
+ 
+ /*  
 // opt2 start       
     nx=(nx*2+ty*4)/6;
     ny=(ny*2-tx*4)/6;
@@ -489,7 +489,7 @@ void ReadEnc()
     ny=ny*V_NORM/nl;
     ty=nx; tx=-ny;
 // opt2 end        
-    
+   */ 
     
     /*
 // float option    
