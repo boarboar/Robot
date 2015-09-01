@@ -193,17 +193,19 @@ void setup()
 }
 
 void loop()
-{
-  uint32_t cycleTime = millis();  
+{  
+  uint32_t cycleTime = millis();
+  if (IsDrive && (CheckCommandTimeout() || (us_dist<US_WALL_DIST && drv_dir[0]+drv_dir[1]==2))) StopDrive(); 
   if ( cycleTime < lastPidTime) lastPidTime=0; // wraparound, not correct   
   uint16_t ctime = cycleTime - lastPidTime;
   if ( ctime >= PID_TIMEOUT) { // PID cycle    
     ReadEnc();
-    if (IsDrive) {    
+    if (IsDrive) {
+  /*    
       if (CheckCommandTimeout() || (us_dist<US_WALL_DIST && drv_dir[0]+drv_dir[1]==2)
        //|| (us_wall_cnt_up>=US_WALL_CNT_THR && drv_dir[0]==1 && drv_dir[1]==1) // wall ahead && forwared drive 
         ) StopDrive();
-      else { 
+      else*/ { 
         PID(ctime); 
       }
     } // IsDrive
