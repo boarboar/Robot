@@ -22,23 +22,7 @@
 // Besides, the different pins for the separate analogwrite channels should be on the separate timer+compare 
 
 #define TTY_SPEED 38400
-//#define TTY_SPEED 57600
 //#define TTY_SPEED 9600
-
-/*
-// head 1
-#define M1_OUT_1  P1_3
-#define M1_OUT_2  P1_4
-#define M1_EN     P2_1 // analog write
-
-#define M2_OUT_1  P2_3
-#define M2_OUT_2  P2_4
-#define M2_EN     P2_5 // analog write
-
-#define ENC1_IN  P1_5
-#define ENC2_IN  P2_0
-
-*/
 
 #define M2_OUT_1  P1_4
 #define M2_OUT_2  P1_3
@@ -55,22 +39,17 @@
 #define US_OUT   P1_7
 
 // common vars 
-//const unsigned int CYCLE_TIMEOUT = 50;
-//const unsigned int PID_TIMEOUT = (CYCLE_TIMEOUT*4);
-//const unsigned int PID_TIMEOUT = CYCLE_TIMEOUT;
-//const unsigned int PID_TIMEOUT = CYCLE_TIMEOUT*2;
 const unsigned int PID_TIMEOUT = 100;
 //const unsigned int RESP_TIMEOUT = 90;
 const unsigned int RESP_TIMEOUT = 25; // C_T+R_T >= 75ms
-//const unsigned int CMD_TIMEOUT = 1000; 
-const unsigned int CMD_TIMEOUT = 500; 
+const unsigned int CMD_TIMEOUT = 600; 
 const unsigned int RATE_SAMPLE_PERIOD = 400;
 const unsigned int WHEEL_CHGSTATES = 40;
 const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
 const unsigned int WHEEL_RAD_MM_10 = 350; 
 const unsigned int WHEEL_BASE_MM_10 = 1400;// approx... carriage base 145 - too high, 135 - too low
 const unsigned int WHEEL_RATIO_SMPS_10 = (WHEEL_RAD_MM_10/10*628/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
-const unsigned int US_WALL_DIST=0;
+const unsigned int US_WALL_DIST=20;
 const unsigned int US_WALL_CNT_THR=100;
 const unsigned int M_COAST_TIME=400;
 const unsigned int M_WUP_PID_CNT=1;
@@ -106,29 +85,23 @@ byte buf[BUF_SIZE];
 byte bytes = 0;
 
 uint32_t lastCommandTime;
-//uint32_t lastCycleTime;
 uint32_t lastPidTime;
 uint16_t last_dur=0;
 uint16_t us_meas_dur=0;
 
 uint8_t cmd_id=0;
 
-//uint8_t test_val=0;
-
 int32_t dist=0;
 int16_t diff=0;
 int32_t x=0, y=0;
 int32_t nx=0, ny=V_NORM;
 int32_t tx=-V_NORM, ty=0;
-/*
-float nx=0.0, ny=1.0;
-float tx=-1.0, ty=0.0;
-*/
 
-volatile int16_t us_dist=0; 
-volatile int8_t us_wall_cnt_up=0; 
-volatile int8_t us_wall_cnt_dn=0; 
+int16_t us_dist=0; 
+//volatile int8_t us_wall_cnt_up=0; 
+//volatile int8_t us_wall_cnt_dn=0; 
 volatile uint8_t v_enc_cnt[2]={0,0}; 
+volatile uint8_t es1=0, es2=0;
 
 enum EnumCmd { EnumCmdDrive=1, EnumCmdTest=2, EnumCmdStop=3, EnumCmdLog=4, EnumCmdContinueDrive=5, EnumCmdRst=6 };  
 enum EnumError { EnumErrorUnknown=-1, EnumErrorBadSyntax=-2, EnumErrorBadParam=-3, EnumErrorNone=-100};  
@@ -151,7 +124,6 @@ int8_t int_err[2]={0,0};
 boolean IsDrive = false;
 volatile uint8_t EncOverflow=0;
 
-//#define PID_LOG_SZ 8
 #define PID_LOG_SZ 10
 uint8_t pid_cnt=0;
 uint8_t pid_log_ptr=0;
@@ -192,11 +164,10 @@ void setup()
     digitalWrite(RED_LED, HIGH); delay(100); digitalWrite(RED_LED, LOW); 
   }
   Serial.begin(TTY_SPEED);
-  //lastCommandTime = lastCycleTime = millis();  
+  
   digitalWrite(RED_LED, HIGH);  
    
   // calibration sequence
-  //lastCommandTime=millis();
   IsDrive=1; 
   // warmup (TODO - make step up)
   Drive(1, M_POW_HIGH/2, 1, M_POW_HIGH/2);
@@ -206,7 +177,6 @@ void setup()
   Drive(1, M_POW_HIGH, 1, M_POW_HIGH);
   delay(RATE_SAMPLE_PERIOD);   
   // now sample for twice the time
-  //enc_cnt[0]=enc_cnt[1]=0;  
   ReadEnc();
   delay(RATE_SAMPLE_PERIOD*2); // calibration
   ReadEnc();
@@ -220,7 +190,6 @@ void setup()
   while (Serial.available()) Serial.read();  // eat garbage
   
   lastCommandTime = lastPidTime = millis();  
-
 }
 
 void loop()
@@ -231,7 +200,7 @@ void loop()
   if ( ctime >= PID_TIMEOUT) { // PID cycle    
     ReadEnc();
     if (IsDrive) {    
-      if (CheckCommandTimeout() 
+      if (CheckCommandTimeout() || (us_dist<US_WALL_DIST && drv_dir[0]+drv_dir[1]==2)
        //|| (us_wall_cnt_up>=US_WALL_CNT_THR && drv_dir[0]==1 && drv_dir[1]==1) // wall ahead && forwared drive 
         ) StopDrive();
       else { 
@@ -246,16 +215,13 @@ void loop()
     cmdResult = Parse(); 
     bytes = 0; // empty input buffer (only one command at a time)
     cmd_id++;  
-    //test_val=0;    
     if(STARTDRIVE()) {
         lastCommandTime = millis();        
-        //lastCycleTime=
         lastPidTime=millis(); //NB!
         StartDrive();
         last_dur=0;
         pid_cnt=0;
         pid_log_ptr=0;
-        //test_val=1;
       /*
       if(us_wall_cnt_up>=US_WALL_CNT_THR && drv_dir[0]==1 && drv_dir[1]==1) {
         last_dur=millis()-lastCommandTime;
@@ -275,7 +241,6 @@ void loop()
       tx=-V_NORM;ty=0;
       dist=diff=0;
     } else if(cmdResult==EnumCmdTest) {
-      //readUSDist();
     }
     delay(RESP_TIMEOUT);
     Notify(); 
@@ -290,13 +255,7 @@ void Notify() {
     case EnumCmdContinueDrive:     
     case EnumCmdStop: 
     case EnumCmdRst: {
-      uint32_t t=millis();
-      addJson("L", last_dur); 
-      addJsonArr16_2("P", cur_power[0], cur_power[1]);
-      addJsonArr16_2("T", trg_rate[0], trg_rate[1]);
-      addJsonArr16_2("R", last_enc_rate[0], last_enc_rate[1]);
-      addJsonArr16_2("W", last_enc_rate[0]*WHEEL_RATIO_RPM, last_enc_rate[1]*WHEEL_RATIO_RPM); 
-      
+      // speeed calc
       int16_t s[2];
       for(uint8_t i=0; i<2; i++) {         
         if(drv_dir[i]==0) s[i]=0;
@@ -305,25 +264,19 @@ void Notify() {
           if(drv_dir[i]==2) s[i]=-s[i];
         } 
       }
-      
+ 
+      addJson("L", last_dur); 
+      addJsonArr16_2("P", cur_power[0], cur_power[1]);
+      addJsonArr16_2("T", trg_rate[0], trg_rate[1]);
+      addJsonArr16_2("R", last_enc_rate[0], last_enc_rate[1]);
+      addJsonArr16_2("W", last_enc_rate[0]*WHEEL_RATIO_RPM, last_enc_rate[1]*WHEEL_RATIO_RPM);      
       addJson("S", (s[0]+s[1])/2);
-      /*
-      addJson("D", (int16_t)(dist/10));
-      addJson("F", (int16_t)(diff/10));
-      addJsonArr16_2("N", (int16_t)nx, (int16_t)ny); // in cm
-      addJsonArr16_2("X", (int16_t)(x/10), (int16_t)(y/10)); // in cm
-      */
       addJson("D", (int16_t)(dist/100));
       addJson("F", (int16_t)(diff/100));
       addJsonArr16_2("N", (int16_t)nx, (int16_t)ny); // in normval
       addJsonArr16_2("X", (int16_t)(x/100), (int16_t)(y/100)); // in cm
-
       addJson("U", (int16_t)(us_dist));
-      addJson("UC", (int16_t)(us_wall_cnt_up));
-      /*
-      addJson("TV", (int16_t)(test_val)); //test
-      addJsonArr16_2("LOG", (int16_t)(pid_cnt), (int16_t)(pid_log_ptr)); //test
-      */
+      //addJson("UC", (int16_t)(us_wall_cnt_up));
       }
       break; 
     case EnumCmdTest:       
@@ -335,31 +288,9 @@ void Notify() {
       addJson("UD", (int16_t)(us_meas_dur));
       break;
     case EnumCmdLog: {
+      uint8_t i;
       addJson("LCNT", pid_cnt);
-      Serial.print("\""); Serial.print("LOGR"); Serial.print("\":\"");
-      
-          uint8_t i;
-      /*
-      // find first record
-      uint8_t idx0=0;
-      uint8_t minidx=255;
-      
-      for(i=0; i<PID_LOG_SZ; i++) if(logr[i].pid_log_idx<minidx) {minidx=logr[i].pid_log_idx; idx0=i;}
-      for(i=0; i<PID_LOG_SZ; i++) {
-        if(logr[idx0].pid_log_idx!=255) { // if not empty
-          Serial.print(logr[idx0].pid_log_idx);Serial.print(":"); Serial.print(logr[idx0].cmd_id);Serial.print(":"); Serial.print(logr[idx0].ctime); Serial.print(":"); 
-          Serial.print("("); Serial.print(logr[idx0].pid_log_rate[0]);Serial.print(","); Serial.print(logr[idx0].pid_log_rate[1]); Serial.print(")"); 
-          Serial.print("("); Serial.print(trg_rate[0]-logr[idx0].pid_log_rate[0]);Serial.print(","); Serial.print(trg_rate[1]-logr[idx0].pid_log_rate[1]); Serial.print(")"); 
-          Serial.print("("); Serial.print(logr[idx0].pid_log_ierr[0]);Serial.print(","); Serial.print(logr[idx0].pid_log_ierr[1]); Serial.print(")"); 
-          Serial.print("("); Serial.print(logr[idx0].pid_log_derr[0]);Serial.print(","); Serial.print(logr[idx0].pid_log_derr[1]); Serial.print(")"); 
-          Serial.print("("); Serial.print(logr[idx0].pid_log_pow[0]);Serial.print(","); Serial.print(logr[idx0].pid_log_pow[1]); Serial.print(");"); 
-          logr[idx0].pid_log_idx=255; // mark as empty      
-          delay(10);
-        }
-        idx0++;
-        if(idx0>=PID_LOG_SZ) idx0=0; //wraparound        
-      }
-*/        
+      Serial.print("\""); Serial.print("LOGR"); Serial.print("\":\"");      
       for(i=0; i<PID_LOG_SZ; i++) {
         if(logr[i].pid_log_idx!=255) { // if not empty
         Serial.print(logr[i].pid_log_idx);Serial.print(":"); Serial.print(logr[i].cmd_id);Serial.print(":"); Serial.print(logr[i].ctime); Serial.print(":"); 
@@ -396,13 +327,15 @@ void readUSDist() {
   digitalWrite(US_OUT, LOW);
   delayMicroseconds(2);
   digitalWrite(US_OUT, HIGH);
-  // delayMicroseconds(10);
-  delayMicroseconds(5);
+  delayMicroseconds(10);
+  //delayMicroseconds(5);
   digitalWrite(US_OUT, LOW);
   uint32_t ms=millis();
   uint32_t d=pulseIn(US_IN, HIGH, 25000);
+  if(!d) return;
   us_meas_dur = millis()-ms;
-  us_dist=(int16_t)(d/58);
+  us_dist=(int16_t)(d/58);  
+  /*
   if(us_dist<=US_WALL_DIST) {
     if(us_wall_cnt_up<US_WALL_CNT_THR) us_wall_cnt_up++;
     else us_wall_cnt_dn=0;
@@ -411,6 +344,7 @@ void readUSDist() {
     if(us_wall_cnt_dn<US_WALL_CNT_THR) us_wall_cnt_dn++;
     else us_wall_cnt_up=0;
   }
+  */
 }
 
 void StartDrive() 
@@ -426,7 +360,6 @@ void StartDrive()
     last_err[i]=0;
     //int_err[i]=0; // ?
   }
-  //enc_cnt[0]=enc_cnt[1]=0;  
   ReadEnc();
   Drive(drv_dir[0], cur_power[0], drv_dir[1], cur_power[1]); // change interface
   if (!IsDrive)
@@ -439,11 +372,7 @@ void StartDrive()
 void StopDrive() 
 {
   if(!IsDrive) return;
-  //IsDrive = false;
   Drive(0, 0, 0, 0);
-//  delay(M_COAST_TIME);  
-//  unsigned long n=millis();
-//  if(n>lastPidTime) PID(n-lastPidTime); // finalize for the sake of dead reckoning
   IsDrive = false;
   digitalWrite(RED_LED, LOW);  
   last_enc_rate[0]=last_enc_rate[1]=0;
@@ -455,6 +384,7 @@ void ReadEnc()
 {
   int16_t s[2];
   int16_t dd, df;
+  uint16_t tl;
 
   for(uint8_t i=0; i<2; i++) {
     last_enc_cnt[i]=v_enc_cnt[i];
@@ -463,8 +393,7 @@ void ReadEnc()
     else s[i]=last_enc_cnt[i];
   }
 
-    // dead reckoning
-  
+  // dead reckoning 
   if(s[0] || s[1]) {  
     dd = CHGST_TO_MM_10(s[0]+s[1]);
     df = CHGST_TO_MM_10(s[0]-s[1]);
@@ -472,38 +401,10 @@ void ReadEnc()
     diff+=df; // drive diff, 10th-mm      
     tx += nx*df/WHEEL_BASE_MM_10;
     ty += ny*df/WHEEL_BASE_MM_10;
-
-// opt1 start    
-    uint16_t tl=isqrt32(tx*tx+ty*ty);
+    tl=isqrt32(tx*tx+ty*ty);
     tx=tx*V_NORM/tl;  
     ty=ty*V_NORM/tl;
     nx=ty; ny=-tx;
-// opt1 end    
- 
- /*  
-// opt2 start       
-    nx=(nx*2+ty*4)/6;
-    ny=(ny*2-tx*4)/6;
-    uint16_t nl=isqrt32(nx*nx+ny*ny);
-    nx=nx*V_NORM/nl;  
-    ny=ny*V_NORM/nl;
-    ty=nx; tx=-ny;
-// opt2 end        
-   */ 
-    
-    /*
-// float option    
-    tx += nx*(s[1]-s[0])/WHEEL_BASE_MM;
-    ty += ny*(s[1]-s[0])/WHEEL_BASE_MM;
-    nx=(2.0*nx+4.0*ty)/6.0;
-    ny=(2.0*ny-4.0*tx)/6.0;
-    float nl=sqrt(nx*nx+ny*ny);
-    nx/=nl; ny/=nl;
-    ty=nx, tx=-ny;
-    
-		float dx=nx*(s1+s2)/2.0;
-		float dy=ny*(s1+s2)/2.0;		
-*/
     x+=(int32_t)nx*dd/(2*V_NORM);
     y+=(int32_t)ny*dd/(2*V_NORM);
   }
@@ -515,7 +416,6 @@ void PID(uint16_t ctime)
   if(ctime>0) {
     for(uint8_t i=0; i<2; i++) {
       int8_t err=0, err_d=0;
-      //s[i]=CHGST_TO_MM_10(s[i]);
       last_enc_rate[i]=(uint8_t)((uint16_t)last_enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
       logr[pid_log_ptr].ec[i]=last_enc_cnt[i];
       if(pid_cnt>=M_WUP_PID_CNT) { // do not correct for the first cycles - ca 100-200ms(warmup)
@@ -566,24 +466,6 @@ void Drive_s(uint8_t dir, uint8_t pow, int16_t p_en, uint8_t p1, uint8_t p2)
   analogWrite(p_en, pow);
 }
 
-volatile uint8_t es1=0;
-volatile uint8_t es2=0;
-
-void encodeInterrupt_1() {
-  uint8_t v=digitalRead(ENC1_IN);
-  if(es1==v) return;
-  es1=v;  
-  if(v_enc_cnt[0]==255) EncOverflow|=0x01;
-  else v_enc_cnt[0]++; 
-}
-
-void encodeInterrupt_2() {
-  uint8_t v=digitalRead(ENC2_IN);  
-  if(es2==v) return;
-  es2=v;  
-  if(v_enc_cnt[1]==255) EncOverflow|=0x01;
-  else v_enc_cnt[1]++; 
-}
 
 //=======================================
 
@@ -624,12 +506,10 @@ int8_t Parse()
       pos = bctoi(pos, &m);      
       if(m<-255 || m>254) return EnumErrorBadParam;
       if(buf[pos] != (i==0 ? ',' : 0)) return EnumErrorBadSyntax;
-      //if(m==0)       { if(drv_dir[i]!=0) { drv_dir[i]=0; chg=true;} cmd_power[i]=0; } 
       if(m==0)       { if(cmd_power[i]) { cmd_power[i]=0; chg=true;}} 
       else if (m>0)  { if(m<M_POW_LOW) m=M_POW_LOW; if(drv_dir[i]!=1 || cmd_power[i]!=m) { cmd_power[i]=m; drv_dir[i]=1; chg=true;} } 
       else           { if((-m)<M_POW_LOW) m=-M_POW_LOW; if(drv_dir[i]!=2 || cmd_power[i]!=-m) {cmd_power[i]=-m; drv_dir[i]=2; chg=true;} }  
     }
-    //if(!drv_dir[0] && !drv_dir[1]) return EnumCmdStop;
     if(!cmd_power[0] && !cmd_power[1]) return EnumCmdStop;
     return chg ? EnumCmdDrive : EnumCmdContinueDrive;
   } else if((pos=Match("T"))) {
@@ -675,6 +555,21 @@ byte bctoi(byte index, int *val)
   return index;
 }
 
+uint16_t isqrt32(uint32_t n)  
+    {  
+        uint16_t c = 0x8000;  
+        uint16_t g = 0x8000;  
+      
+        for(;;) {  
+            if((uint32_t)g*g > n)  
+                g ^= c;  
+            c >>= 1;  
+            if(c == 0)  
+                return g;  
+            g |= c;  
+        }  
+    } 
+    
  void addJson(const char *name, int16_t value) {
   Serial.print("\"");
   Serial.print(name);
@@ -694,17 +589,18 @@ byte bctoi(byte index, int *val)
     Serial.print("],");
  }
  
- uint16_t isqrt32(uint32_t n)  
-    {  
-        uint16_t c = 0x8000;  
-        uint16_t g = 0x8000;  
-      
-        for(;;) {  
-            if((uint32_t)g*g > n)  
-                g ^= c;  
-            c >>= 1;  
-            if(c == 0)  
-                return g;  
-            g |= c;  
-        }  
-    }  
+void encodeInterrupt_1() {
+  uint8_t v=digitalRead(ENC1_IN);
+  if(es1==v) return;
+  es1=v;  
+  if(v_enc_cnt[0]==255) EncOverflow|=0x01;
+  else v_enc_cnt[0]++; 
+}
+
+void encodeInterrupt_2() {
+  uint8_t v=digitalRead(ENC2_IN);  
+  if(es2==v) return;
+  es2=v;  
+  if(v_enc_cnt[1]==255) EncOverflow|=0x01;
+  else v_enc_cnt[1]++; 
+} 
