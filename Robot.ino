@@ -112,8 +112,7 @@ int32_t dist=0;
 int16_t diff=0;
 int32_t x=0, y=0;
 int32_t nx=0, ny=V_NORM;
-//int32_t tx=-V_NORM, ty=0;
-int32_t tx, ty;
+int32_t tx=-V_NORM, ty=0;
 int16_t us_dist=9999; 
 volatile uint8_t v_enc_cnt[2]={0,0}; 
 volatile uint8_t v_es[2]={0,0};
@@ -250,7 +249,7 @@ void loop()
       StopDrive();
       x=y=0;
       nx=0; ny=V_NORM;
-      //tx=-V_NORM;ty=0;
+      tx=-V_NORM;ty=0;
       dist=diff=0;
     } 
     else if(cmdResult==EnumCmdTest) { ; }
@@ -411,7 +410,8 @@ void ReadEnc()
 {
   int16_t s[2];
   int16_t dd, df;
-  uint32_t tl;
+  //uint32_t tl;
+  uint16_t tl;
 
   for(uint8_t i=0; i<2; i++) {
     last_enc_cnt[i]=v_enc_cnt[i];
@@ -539,9 +539,7 @@ int8_t Parse()
     }
     if(!cmd_power[0] && !cmd_power[1]) return EnumCmdStop;
     return chg ? EnumCmdDrive : EnumCmdContinueDrive;
-  } else if((pos=Match("T"))) {
-    return EnumCmdTest;
-  }
+  } 
   else if((pos=Match("L"))) {
     return EnumCmdLog;
   } 
@@ -559,6 +557,9 @@ int8_t Parse()
   }
   else if((pos=Match("TR"))) {
     return EnumCmdTaskMove;
+  }
+  else if((pos=Match("T"))) {
+    return EnumCmdTest;
   }
   else return EnumErrorUnknown;
 }
@@ -631,23 +632,25 @@ uint16_t isqrt32(uint32_t n)
 void encodeInterrupt_1() {
   baseInterrupt(0);
   /*
+//  
   uint8_t v=digitalRead(ENC1_IN);
   if(v_es[0]==v) return;
   v_es[0]=v;  
-  if(v_enc_cnt[0]==255) EncOverflow|=0x01;
-  else v_enc_cnt[0]++; 
-  */
+  //if(v_enc_cnt[0]==255) EncOverflow|=0x01;
+  //else 
+  v_enc_cnt[0]++;
+ )*/ 
 }
 
 void encodeInterrupt_2() {
-  baseInterrupt(1);
-  /*
-  uint8_t v=digitalRead(ENC2_IN);  
+ baseInterrupt(1);
+ /* uint8_t v=digitalRead(ENC2_IN);  
   if(v_es[1]==v) return;
   v_es[1]=v;  
-  if(v_enc_cnt[1]==255) EncOverflow|=0x01;
-  else v_enc_cnt[1]++; 
-  */
+  //if(v_enc_cnt[1]==255) EncOverflow|=0x01;
+  //telse 
+  v_enc_cnt[1]++;
+ )*/ 
 } 
 
 void baseInterrupt(uint8_t i) {
