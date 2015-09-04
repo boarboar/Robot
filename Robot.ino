@@ -54,6 +54,9 @@ const unsigned int US_WALL_CNT_THR=100;
 const unsigned int M_COAST_TIME=400;
 const unsigned int M_WUP_PID_CNT=1;
 
+const unsigned int TASK_TIMEOUT = 5000; 
+const unsigned int TASK_PID_C = 4; // track tast every ... PID cycle
+
 const unsigned int R_F_ISDRIVE=0x01;
 const unsigned int R_F_ISOVERFLOW=0x02;
 const unsigned int R_F_ISTASK=0x04;
@@ -70,8 +73,6 @@ const unsigned int R_F_ISTASKROT=0x16;
 #define F_SETTASKMOV() (flags|=(R_F_ISTASK|R_F_ISTASKMOV))
 #define F_SETTASKROT() (flags|=(R_F_ISTASK|R_F_ISTASKROT))
 #define F_CLEARTASK() (flags&=~(R_F_ISTASK|R_F_ISTASKMOV|R_F_ISTASKROT))
-
-#define V_NORM 10000
 
 #define CHGST_TO_MM_10(CNT)  ((int32_t)(CNT)*62832*WHEEL_RAD_MM_10/WHEEL_CHGSTATES/10000)
 //#define STARTDRIVE() (cmdResult==EnumCmdDrive || (cmdResult==EnumCmdContinueDrive && !IsDrive))
@@ -101,18 +102,27 @@ const unsigned int R_F_ISTASKROT=0x16;
 byte buf[BUF_SIZE];
 byte bytes = 0;
 
-uint32_t lastCommandTime;
+uint32_t lastCommandTime; // =lastTaskTime
 uint32_t lastPidTime;
 uint16_t last_dur=0;
 //uint16_t us_meas_dur=0;
 
+uint8_t task_pid_cnt=0;
+
 uint8_t cmd_id=0;
 
-int32_t dist=0;
-int16_t diff=0;
-int32_t x=0, y=0;
+// tracking
+#define V_NORM 10000
+int32_t dist=0;  // in mm
+int16_t diff=0;  // in mm
+int32_t x=0, y=0;// in mm
+/*
 int32_t nx=0, ny=V_NORM;
 int32_t tx=-V_NORM, ty=0;
+*/
+int16_t nx=0, ny=V_NORM;
+int16_t tx=-V_NORM, ty=0;
+
 int16_t us_dist=9999; 
 volatile uint8_t v_enc_cnt[2]={0,0}; 
 volatile uint8_t v_es[2]={0,0};
@@ -120,8 +130,8 @@ volatile uint8_t v_es[2]={0,0};
 enum EnumCmd { EnumCmdDrive=1, EnumCmdTest=2, EnumCmdStop=3, EnumCmdLog=4, EnumCmdContinueDrive=5, EnumCmdRst=6, EnumCmdTaskMove=7, EnumCmdTaskRotate=8};  
 enum EnumError { EnumErrorUnknown=-1, EnumErrorBadSyntax=-2, EnumErrorBadParam=-3, EnumErrorNone=-100};  
 
-int16_t task_target=0;
-int16_t task_progress=0;
+int16_t task_target=0;   // in cm
+int16_t task_progress=0; // in cm
 int8_t cmdResult=EnumErrorNone;
 uint8_t drv_dir[2]={0,0}; 
 uint8_t cur_power[2]={0,0}; 
@@ -134,10 +144,6 @@ uint8_t calib_enc_rate=0; // target rate (counts per RATE_SAMPLE_PERIOD) for 100
 
 int8_t last_err[2]={0,0};
 int8_t int_err[2]={0,0};
-
-// flags - TODO - bitfield
-//boolean IsDrive = false;
-//volatile uint8_t EncOverflow=0;
 
 uint8_t flags=0; 
 
@@ -212,12 +218,20 @@ void setup()
 void loop()
 {  
   uint32_t cycleTime = millis();
-  if (F_ISDRIVE() && (CheckCommandTimeout() || (us_dist<US_WALL_DIST && drv_dir[0]+drv_dir[1]==2))) StopDrive(); 
+  if (F_ISDRIVE() && (/*CheckCommandTimeout() ||*/ (us_dist<US_WALL_DIST && drv_dir[0]+drv_dir[1]==2))) StopDrive(); 
   if ( cycleTime < lastPidTime) lastPidTime=0; // wraparound, not correct   
   uint16_t ctime = cycleTime - lastPidTime;
   if ( ctime >= PID_TIMEOUT) { // PID cycle    
     ReadEnc();
-    if (F_ISDRIVE()) PID(ctime); 
+    if (F_ISDRIVE()) {
+      PID(ctime); 
+      if(F_ISTASKANY()) { 
+        if((++task_pid_cnt)%TASK_PID_C==0) { // task tracking cycle
+          task_pid_cnt=0;
+          if(TrackTask() || CheckCommandTimeout(TASK_TIMEOUT)) StopTask();
+        }
+      } else if(CheckCommandTimeout(CMD_TIMEOUT)) StopDrive();
+    }
     readUSDist(); 
     lastPidTime=cycleTime;
   } // PID cycle 
@@ -227,23 +241,15 @@ void loop()
     bytes = 0; // empty input buffer (only one command at a time)
     cmd_id++;  
     if(cmdResult==EnumCmdDrive || (cmdResult==EnumCmdContinueDrive && !F_ISDRIVE())) {
-        F_CLEARTASK();
-        lastCommandTime = millis();        
-        last_dur=0;
-        /*
-        lastPidTime=millis(); //NB!
-        last_dur=0;
-        */
-        if(!(us_dist<US_WALL_DIST && drv_dir[0]+drv_dir[1]==2)) StartDrive();
-        /*
-        pid_cnt=0;
-        pid_log_ptr=0;
-        */
+      F_CLEARTASK();
+      lastCommandTime = millis();        
+      last_dur=0;
+      if(!(us_dist<US_WALL_DIST && drv_dir[0]+drv_dir[1]==2)) StartDrive();
     } else if(cmdResult==EnumCmdContinueDrive && F_ISDRIVE()) {
       last_dur=millis()-lastCommandTime;
       lastCommandTime = millis();
     } else if(cmdResult==EnumCmdStop) {
-      last_dur=millis()-lastCommandTime;
+      //last_dur=millis()-lastCommandTime;
       StopDrive();
     } else if(cmdResult==EnumCmdRst) {
       StopDrive();
@@ -253,7 +259,7 @@ void loop()
       dist=diff=0;
     } 
     else if(cmdResult==EnumCmdTest) { ; }
-    else if(cmdResult==EnumCmdTaskMove) { 
+    else if(cmdResult==EnumCmdTaskMove) {
         lastCommandTime = millis();        
         StartTask();
     }
@@ -287,12 +293,11 @@ void Notify() {
       addJsonArr16_2("R", last_enc_rate[0], last_enc_rate[1]);
       addJsonArr16_2("W", last_enc_rate[0]*WHEEL_RATIO_RPM, last_enc_rate[1]*WHEEL_RATIO_RPM);      
       addJson("S", (s[0]+s[1])/2);
-      addJson("D", (int16_t)(dist/100));
-      addJson("F", (int16_t)(diff/100));
+      addJson("D", (int16_t)(dist/100)); // in cm
+      addJson("F", (int16_t)(diff/100)); // in cm
       addJsonArr16_2("N", (int16_t)nx, (int16_t)ny); // in normval
       addJsonArr16_2("X", (int16_t)(x/100), (int16_t)(y/100)); // in cm
       addJson("U", (int16_t)(us_dist));
-      //addJson("UC", (int16_t)(us_wall_cnt_up));
       }
       break; 
     case EnumCmdTest:       
@@ -301,12 +306,12 @@ void Notify() {
       addJsonArr16_2("EC", last_enc_cnt[0], last_enc_cnt[1]);
       addJson("OVF", (int16_t)(F_ISOVERFLOW()));
       addJson("U", (int16_t)(us_dist));
-      //addJson("UD", (int16_t)(us_meas_dur));
       addJson("FT", flags&R_F_ISTASK);
       addJson("FM", flags&R_F_ISTASKMOV);
       addJson("FR", flags&R_F_ISTASKROT);
       addJson("TG", task_target);
       addJson("TP", task_progress); 
+      addJson("L", last_dur); 
       break;
     case EnumCmdLog: {
       uint8_t i;
@@ -342,12 +347,12 @@ void Notify() {
   Serial.println();
 }
 
-boolean CheckCommandTimeout()
+boolean CheckCommandTimeout(uint16_t t)
 {
   unsigned long commandTime = millis();
   if ( commandTime >= lastCommandTime) commandTime -= lastCommandTime; 
   else lastCommandTime = 0;
-  return commandTime > CMD_TIMEOUT;
+  return commandTime > t;
 }
 
 void readUSDist() {
@@ -355,7 +360,6 @@ void readUSDist() {
   delayMicroseconds(2);
   digitalWrite(US_OUT, HIGH);
   delayMicroseconds(10);
-  //delayMicroseconds(5);
   digitalWrite(US_OUT, LOW);
   //uint32_t ms=millis();
   uint32_t d=pulseIn(US_IN, HIGH, 25000);
@@ -398,19 +402,33 @@ void StopDrive()
   digitalWrite(RED_LED, LOW);  
   last_enc_rate[0]=last_enc_rate[1]=0;
   cur_power[0]=cur_power[1]=0;
+  last_dur=millis()-lastCommandTime;
   //us_wall_cnt=0;
 }
 
 void StartTask() 
 {
   task_progress=0;
+  task_pid_cnt=0;
+  cmd_power[0]=cmd_power[1]=M_POW_LOW;
+  drv_dir[0]=drv_dir[1]=1;
+  StartDrive();
+}
+
+void StopTask() 
+{
+  StopDrive();
+}
+
+boolean TrackTask() 
+{
+  return task_progress>=task_target;
 }
   
 void ReadEnc()
 {
   int16_t s[2];
   int16_t dd, df;
-  //uint32_t tl;
   uint16_t tl;
 
   for(uint8_t i=0; i<2; i++) {
@@ -422,18 +440,19 @@ void ReadEnc()
 
   // dead reckoning 
   if(s[0] || s[1]) {  
-    dd = CHGST_TO_MM_10(s[0]+s[1]);
-    df = CHGST_TO_MM_10(s[0]-s[1]);
-    dist+=dd/2; // drive distance, 10th-mm  
-    diff+=df; // drive diff, 10th-mm      
-    tx += nx*df/WHEEL_BASE_MM_10;
-    ty += ny*df/WHEEL_BASE_MM_10;
-    tl=isqrt32(tx*tx+ty*ty);
-    tx=tx*V_NORM/tl;  
-    ty=ty*V_NORM/tl;
+    dd = CHGST_TO_MM_10(s[0]+s[1]); // in 10th mm
+    df = CHGST_TO_MM_10(s[0]-s[1]); // in 10th mm
+    dist+=dd/2; // drive distance, 10th mm  
+    diff+=df; // drive diff, 10th mm      
+    tx += (int32_t)nx*df/WHEEL_BASE_MM_10;
+    ty += (int32_t)ny*df/WHEEL_BASE_MM_10;
+    tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
+    tx=(int32_t)tx*V_NORM/tl;  
+    ty=(int32_t)ty*V_NORM/tl;
     nx=ty; ny=-tx;
-    x+=(int32_t)nx*dd/(2*V_NORM);
-    y+=(int32_t)ny*dd/(2*V_NORM);
+    x+=(int32_t)nx*dd/(2*V_NORM); // in 10th mm
+    y+=(int32_t)ny*dd/(2*V_NORM); // in 10th mm
+    task_progress += dd/100; // in cm (ONLY FOR TM !!!)
   }
 
 }
@@ -629,29 +648,9 @@ uint16_t isqrt32(uint32_t n)
     Serial.print("],");
  }
  
-void encodeInterrupt_1() {
-  baseInterrupt(0);
-  /*
-//  
-  uint8_t v=digitalRead(ENC1_IN);
-  if(v_es[0]==v) return;
-  v_es[0]=v;  
-  //if(v_enc_cnt[0]==255) EncOverflow|=0x01;
-  //else 
-  v_enc_cnt[0]++;
- )*/ 
-}
+void encodeInterrupt_1() { baseInterrupt(0); }
 
-void encodeInterrupt_2() {
- baseInterrupt(1);
- /* uint8_t v=digitalRead(ENC2_IN);  
-  if(v_es[1]==v) return;
-  v_es[1]=v;  
-  //if(v_enc_cnt[1]==255) EncOverflow|=0x01;
-  //telse 
-  v_enc_cnt[1]++;
- )*/ 
-} 
+void encodeInterrupt_2() { baseInterrupt(1); } 
 
 void baseInterrupt(uint8_t i) {
   const uint8_t encp[]={ENC1_IN, ENC2_IN};
