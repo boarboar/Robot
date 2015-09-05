@@ -54,7 +54,7 @@ const unsigned int US_WALL_CNT_THR=100;
 const unsigned int M_COAST_TIME=400;
 const unsigned int M_WUP_PID_CNT=1;
 
-const unsigned int TASK_TIMEOUT = 5000; 
+const unsigned int TASK_TIMEOUT = 10000; 
 const unsigned int TASK_PID_C = 4; // track tast every ... PID cycle
 
 const unsigned int R_F_ISDRIVE=0x01;
@@ -121,7 +121,7 @@ int32_t nx=0, ny=V_NORM;
 int32_t tx=-V_NORM, ty=0;
 */
 int16_t nx=0, ny=V_NORM;
-int16_t tx=-V_NORM, ty=0;
+//int16_t tx=-V_NORM, ty=0;
 
 int16_t us_dist=9999; 
 volatile uint8_t v_enc_cnt[2]={0,0}; 
@@ -255,7 +255,7 @@ void loop()
       StopDrive();
       x=y=0;
       nx=0; ny=V_NORM;
-      tx=-V_NORM;ty=0;
+      //tx=-V_NORM;ty=0;
       dist=diff=0;
     } 
     else if(cmdResult==EnumCmdTest) { ; }
@@ -428,6 +428,7 @@ boolean TrackTask()
 void ReadEnc()
 {
   int16_t s[2];
+  int16_t tx, ty;
   int16_t dd, df;
   uint16_t tl;
 
@@ -442,8 +443,10 @@ void ReadEnc()
   if(s[0] || s[1]) {  
     dd = CHGST_TO_MM_10(s[0]+s[1]); // in 10th mm
     df = CHGST_TO_MM_10(s[0]-s[1]); // in 10th mm
-    dist+=dd/2; // drive distance, 10th mm  
-    diff+=df; // drive diff, 10th mm      
+    dist+=dd/2; // drive distance, 10th mm
+    task_progress += dd/2/10; // in mm (ONLY FOR TM !!!)  
+    diff+=df; // drive diff, 10th mm 
+    tx=-ny; ty=nx;     
     tx += (int32_t)nx*df/WHEEL_BASE_MM_10;
     ty += (int32_t)ny*df/WHEEL_BASE_MM_10;
     tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
@@ -452,7 +455,7 @@ void ReadEnc()
     nx=ty; ny=-tx;
     x+=(int32_t)nx*dd/(2*V_NORM); // in 10th mm
     y+=(int32_t)ny*dd/(2*V_NORM); // in 10th mm
-    task_progress += dd/100; // in cm (ONLY FOR TM !!!)
+    
   }
 
 }
@@ -539,7 +542,7 @@ boolean ReadSerialCommand()
 }
 
 int8_t Parse()
-// Expect: "De=100,100"
+// Expect: "D=100,100"
 {  
   byte pos;
   int16_t m;
@@ -570,7 +573,7 @@ int8_t Parse()
     pos++;
     pos = bctoi(pos, &m);      
     if(!m) return EnumErrorBadParam;
-    task_target=m;
+    task_target=m*10;
     F_SETTASKMOV();
     return EnumCmdTaskMove;
   }
