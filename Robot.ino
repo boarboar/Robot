@@ -113,9 +113,9 @@ uint8_t cmd_id=0;
 
 // tracking
 #define V_NORM 10000
-int32_t dist=0;  // in mm
-int16_t diff=0;  // in mm
-int32_t x=0, y=0;// in mm
+int32_t dist=0;  // in 10thmm
+int16_t diff=0;  // in 10tmm
+int32_t x=0, y=0;// in 10thmm
 /*
 int32_t nx=0, ny=V_NORM;
 int32_t tx=-V_NORM, ty=0;
@@ -132,6 +132,9 @@ enum EnumError { EnumErrorUnknown=-1, EnumErrorBadSyntax=-2, EnumErrorBadParam=-
 
 int16_t task_target=0;   // in cm
 int16_t task_progress=0; // in cm
+int16_t t_nx, t_ny;
+int16_t t_x, t_y; //in 10thmm - up to 320 cm
+
 int8_t cmdResult=EnumErrorNone;
 uint8_t drv_dir[2]={0,0}; 
 uint8_t cur_power[2]={0,0}; 
@@ -310,7 +313,9 @@ void Notify() {
       addJson("FM", flags&R_F_ISTASKMOV);
       addJson("FR", flags&R_F_ISTASKROT);
       addJson("TG", task_target);
-      addJson("TP", task_progress); 
+      addJson("TP", task_progress);
+      addJsonArr16_2("TN", (int16_t)t_nx, (int16_t)t_ny); // in normval
+      addJsonArr16_2("TX", (int16_t)(t_x/100), (int16_t)(t_y/100)); // in cm 
       addJson("L", last_dur); 
       break;
     case EnumCmdLog: {
@@ -409,6 +414,8 @@ void StopDrive()
 void StartTask() 
 {
   task_progress=0;
+  t_nx=0; t_ny=V_NORM;
+  t_x=t_y=0;
   task_pid_cnt=0;
   cmd_power[0]=cmd_power[1]=M_POW_LOW;
   drv_dir[0]=drv_dir[1]=1;
@@ -444,7 +451,6 @@ void ReadEnc()
     dd = CHGST_TO_MM_10(s[0]+s[1]); // in 10th mm
     df = CHGST_TO_MM_10(s[0]-s[1]); // in 10th mm
     dist+=dd/2; // drive distance, 10th mm
-    task_progress += dd/2/10; // in mm (ONLY FOR TM !!!)  
     diff+=df; // drive diff, 10th mm 
     tx=-ny; ty=nx;     
     tx += (int32_t)nx*df/WHEEL_BASE_MM_10;
@@ -455,9 +461,20 @@ void ReadEnc()
     nx=ty; ny=-tx;
     x+=(int32_t)nx*dd/(2*V_NORM); // in 10th mm
     y+=(int32_t)ny*dd/(2*V_NORM); // in 10th mm
-    
-  }
 
+// task locals
+    task_progress += dd/2/10; // in mm (ONLY FOR TM !!!)  
+    tx=-t_ny; ty=t_nx;     
+    tx += (int32_t)t_nx*df/WHEEL_BASE_MM_10;
+    ty += (int32_t)t_ny*df/WHEEL_BASE_MM_10;
+    tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
+    tx=(int32_t)tx*V_NORM/tl;  
+    ty=(int32_t)ty*V_NORM/tl;
+    t_nx=ty; t_ny=-tx;
+    t_x+=(int32_t)t_nx*dd/(2*V_NORM); // in 10th mm
+    t_y+=(int32_t)t_ny*dd/(2*V_NORM); // in 10th mm
+ 
+  }
 }
 
 void PID(uint16_t ctime)
