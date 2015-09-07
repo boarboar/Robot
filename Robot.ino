@@ -157,7 +157,7 @@ struct __attribute__((__packed__)) LogRec {
   int8_t pid_log_derr[2];
   //int8_t pid_log_ierr[2];
   uint8_t pid_log_pow[2];
-  uint8_t pid_t_err;
+  int8_t pid_t_err;
 } logr[PID_LOG_SZ];
 
 
@@ -323,8 +323,8 @@ void Notify() {
         Serial.print("("); Serial.print(trg_rate[0]-logr[i].pid_log_rate[0]);Serial.print(","); Serial.print(trg_rate[1]-logr[i].pid_log_rate[1]); Serial.print(")"); 
 //        Serial.print("("); Serial.print(logr[i].pid_log_ierr[0]);Serial.print(","); Serial.print(logr[i].pid_log_ierr[1]); Serial.print(")"); 
         Serial.print("("); Serial.print(logr[i].pid_log_derr[0]);Serial.print(","); Serial.print(logr[i].pid_log_derr[1]); Serial.print(")"); 
-        Serial.print("("); Serial.print(logr[i].pid_log_pow[0]);Serial.print(","); Serial.print(logr[i].pid_log_pow[1]); Serial.print("):"); 
-        Serial.print(logr[i].pid_t_err); Serial.print(");"); 
+        Serial.print("("); Serial.print(logr[i].pid_log_pow[0]);Serial.print(","); Serial.print(logr[i].pid_log_pow[1]); Serial.print("),"); 
+        Serial.print(logr[i].pid_t_err); Serial.print(";"); 
         logr[i].pid_log_idx=255; // mark as empty      
         delay(10);
         }
