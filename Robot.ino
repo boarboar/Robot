@@ -75,7 +75,6 @@ const unsigned int R_F_ISTASKROT=0x16;
 #define F_CLEARTASK() (flags&=~(R_F_ISTASK|R_F_ISTASKMOV|R_F_ISTASKROT))
 
 #define CHGST_TO_MM_10(CNT)  ((int32_t)(CNT)*62832*WHEEL_RAD_MM_10/WHEEL_CHGSTATES/10000)
-//#define STARTDRIVE() (cmdResult==EnumCmdDrive || (cmdResult==EnumCmdContinueDrive && !IsDrive))
 
 // for 5v
 /*
@@ -116,12 +115,7 @@ uint8_t cmd_id=0;
 int32_t dist=0;  // in 10thmm
 int16_t diff=0;  // in 10tmm
 int32_t x=0, y=0;// in 10thmm
-/*
-int32_t nx=0, ny=V_NORM;
-int32_t tx=-V_NORM, ty=0;
-*/
 int16_t nx=0, ny=V_NORM;
-//int16_t tx=-V_NORM, ty=0;
 
 int16_t us_dist=9999; 
 volatile uint8_t v_enc_cnt[2]={0,0}; 
@@ -163,6 +157,7 @@ struct __attribute__((__packed__)) LogRec {
   int8_t pid_log_derr[2];
   //int8_t pid_log_ierr[2];
   uint8_t pid_log_pow[2];
+  uint8_t pid_t_err;
 } logr[PID_LOG_SZ];
 
 
@@ -252,13 +247,11 @@ void loop()
       last_dur=millis()-lastCommandTime;
       lastCommandTime = millis();
     } else if(cmdResult==EnumCmdStop) {
-      //last_dur=millis()-lastCommandTime;
       StopDrive();
     } else if(cmdResult==EnumCmdRst) {
       StopDrive();
       x=y=0;
       nx=0; ny=V_NORM;
-      //tx=-V_NORM;ty=0;
       dist=diff=0;
     } 
     else if(cmdResult==EnumCmdTest) { ; }
@@ -330,7 +323,8 @@ void Notify() {
         Serial.print("("); Serial.print(trg_rate[0]-logr[i].pid_log_rate[0]);Serial.print(","); Serial.print(trg_rate[1]-logr[i].pid_log_rate[1]); Serial.print(")"); 
 //        Serial.print("("); Serial.print(logr[i].pid_log_ierr[0]);Serial.print(","); Serial.print(logr[i].pid_log_ierr[1]); Serial.print(")"); 
         Serial.print("("); Serial.print(logr[i].pid_log_derr[0]);Serial.print(","); Serial.print(logr[i].pid_log_derr[1]); Serial.print(")"); 
-        Serial.print("("); Serial.print(logr[i].pid_log_pow[0]);Serial.print(","); Serial.print(logr[i].pid_log_pow[1]); Serial.print(");"); 
+        Serial.print("("); Serial.print(logr[i].pid_log_pow[0]);Serial.print(","); Serial.print(logr[i].pid_log_pow[1]); Serial.print("):"); 
+        Serial.print(logr[i].pid_t_err); Serial.print(");"); 
         logr[i].pid_log_idx=255; // mark as empty      
         delay(10);
         }
@@ -480,6 +474,12 @@ void ReadEnc()
 void PID(uint16_t ctime)
 {
   if(ctime>0) {
+    
+    if(F_ISTASKANY())
+      logr[pid_log_ptr].pid_t_err=t_x/100;  // cm
+    else
+    logr[pid_log_ptr].pid_t_err=0;    
+
     for(uint8_t i=0; i<2; i++) {
       int8_t err=0, err_d=0;
       last_enc_rate[i]=(uint8_t)((uint16_t)last_enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
@@ -503,10 +503,10 @@ void PID(uint16_t ctime)
       //logr[pid_log_ptr].pid_log_pow[i]=pow;      
       logr[pid_log_ptr].pid_log_pow[i]=cur_power[i];      
     } 
-  // log advance/wrap    
   logr[pid_log_ptr].cmd_id=cmd_id;
   logr[pid_log_ptr].ctime=ctime;
   logr[pid_log_ptr].pid_log_idx=pid_cnt++;   
+  // log advance/wrap  
   if(++pid_log_ptr>=PID_LOG_SZ) pid_log_ptr=0;        
   }
 }
