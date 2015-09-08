@@ -144,7 +144,7 @@ int8_t int_err[2]={0,0};
 
 uint8_t flags=0; 
 
-#define PID_LOG_SZ 10
+#define PID_LOG_SZ 8
 uint8_t pid_cnt=0;
 uint8_t pid_log_ptr=0;
 
@@ -153,6 +153,7 @@ struct __attribute__((__packed__)) LogRec {
   uint8_t pid_log_idx;   
   uint8_t ctime;         // pid interval 
   uint8_t ec[2];
+  uint8_t pid_t_rate[2];
   uint8_t pid_log_rate[2];
   int8_t pid_log_derr[2];
   //int8_t pid_log_ierr[2];
@@ -319,6 +320,7 @@ void Notify() {
         if(logr[i].pid_log_idx!=255) { // if not empty
         Serial.print(logr[i].pid_log_idx);Serial.print(":"); Serial.print(logr[i].cmd_id);Serial.print(":"); Serial.print(logr[i].ctime); Serial.print(":"); 
         Serial.print("("); Serial.print(logr[i].ec[0]);Serial.print(","); Serial.print(logr[i].ec[1]); Serial.print(")"); 
+        Serial.print("("); Serial.print(logr[i].pid_t_rate[0]);Serial.print(","); Serial.print(logr[i].pid_t_rate[1]); Serial.print(")"); 
         Serial.print("("); Serial.print(logr[i].pid_log_rate[0]);Serial.print(","); Serial.print(logr[i].pid_log_rate[1]); Serial.print(")"); 
         Serial.print("("); Serial.print(trg_rate[0]-logr[i].pid_log_rate[0]);Serial.print(","); Serial.print(trg_rate[1]-logr[i].pid_log_rate[1]); Serial.print(")"); 
 //        Serial.print("("); Serial.print(logr[i].pid_log_ierr[0]);Serial.print(","); Serial.print(logr[i].pid_log_ierr[1]); Serial.print(")"); 
@@ -474,18 +476,28 @@ void ReadEnc()
 void PID(uint16_t ctime)
 {
   if(ctime>0) {
-    
-    if(F_ISTASKANY())
+    uint8_t t_rate[2];
+    uint8_t i;
+    t_rate[0]=trg_rate[0]; t_rate[1]=trg_rate[1];
+    if(F_ISTASKANY()) {
       logr[pid_log_ptr].pid_t_err=t_x/100;  // cm
+      for(i=0; i<2; i++) {
+        if(task_progress<task_target/2) t_rate[i] = t_rate[i] + (uint32_t)t_rate[i]*task_progress*2/task_target; //*1..2
+        else {
+          t_rate[i] = 3*t_rate[i] - (uint32_t)t_rate[i]*task_progress*2/task_target; //*2..1
+        }
+      }      
+    }
     else
-    logr[pid_log_ptr].pid_t_err=0;    
+      logr[pid_log_ptr].pid_t_err=0;    
 
-    for(uint8_t i=0; i<2; i++) {
+    for(i=0; i<2; i++) {
       int8_t err=0, err_d=0;
       last_enc_rate[i]=(uint8_t)((uint16_t)last_enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
       logr[pid_log_ptr].ec[i]=last_enc_cnt[i];
       if(pid_cnt>=M_WUP_PID_CNT) { // do not correct for the first cycles - ca 100-200ms(warmup)
-        err = trg_rate[i]-last_enc_rate[i];
+        //err = trg_rate[i]-last_enc_rate[i];
+        err = t_rate[i]-last_enc_rate[i];
         err_d = err-last_err[i];
         //int_err[i]=int_err[i]/2+err;
         int_err[i]=0;      
@@ -497,6 +509,7 @@ void PID(uint16_t ctime)
       }
       last_err[i]=err;
       // log entry
+      logr[pid_log_ptr].pid_t_rate[i]=t_rate[i];
       logr[pid_log_ptr].pid_log_rate[i]=last_enc_rate[i];
       logr[pid_log_ptr].pid_log_derr[i]=err_d;
       //logr[pid_log_ptr].pid_log_ierr[i]=int_err[i];
