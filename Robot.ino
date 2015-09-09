@@ -55,7 +55,7 @@ const unsigned int M_COAST_TIME=400;
 const unsigned int M_WUP_PID_CNT=1;
 
 const unsigned int TASK_TIMEOUT = 10000; 
-const unsigned int TASK_PID_C = 4; // track tast every ... PID cycle
+const unsigned int TASK_PID_C = 2; // track tast every ... PID cycle
 
 const unsigned int R_F_ISDRIVE=0x01;
 const unsigned int R_F_ISOVERFLOW=0x02;
@@ -70,6 +70,8 @@ const unsigned int R_F_ISTASKROT=0x16;
 #define F_SETOVERFLOW() (flags|=R_F_ISOVERFLOW)
 #define F_CLEAROVERFLOW() (flags&=~R_F_ISOVERFLOW)
 #define F_ISTASKANY() (flags&R_F_ISTASK)
+#define F_ISTASKMOV() (flags&R_F_ISTASKMOV)
+#define F_ISTASKROT() (flags&R_F_ISTASKROT)
 #define F_SETTASKMOV() (flags|=(R_F_ISTASK|R_F_ISTASKMOV))
 #define F_SETTASKROT() (flags|=(R_F_ISTASK|R_F_ISTASKROT))
 #define F_CLEARTASK() (flags&=~(R_F_ISTASK|R_F_ISTASKMOV|R_F_ISTASKROT))
@@ -124,8 +126,8 @@ volatile uint8_t v_es[2]={0,0};
 enum EnumCmd { EnumCmdDrive=1, EnumCmdTest=2, EnumCmdStop=3, EnumCmdLog=4, EnumCmdContinueDrive=5, EnumCmdRst=6, EnumCmdTaskMove=7, EnumCmdTaskRotate=8};  
 enum EnumError { EnumErrorUnknown=-1, EnumErrorBadSyntax=-2, EnumErrorBadParam=-3, EnumErrorNone=-100};  
 
-int16_t task_target=0;   // in cm
-int16_t task_progress=0; // in cm
+int16_t task_target=0;   // in mm
+//int16_t task_progress=0; // in cm
 int16_t t_nx, t_ny;
 int16_t t_x, t_y; //in 10thmm - up to 320 cm
 
@@ -144,7 +146,7 @@ int8_t int_err[2]={0,0};
 
 uint8_t flags=0; 
 
-#define PID_LOG_SZ 8
+#define PID_LOG_SZ 10
 uint8_t pid_cnt=0;
 uint8_t pid_log_ptr=0;
 
@@ -307,7 +309,7 @@ void Notify() {
       addJson("FM", flags&R_F_ISTASKMOV);
       addJson("FR", flags&R_F_ISTASKROT);
       addJson("TG", task_target);
-      addJson("TP", task_progress);
+//      addJson("TP", task_progress);
       addJsonArr16_2("TN", (int16_t)t_nx, (int16_t)t_ny); // in normval
       addJsonArr16_2("TX", (int16_t)(t_x/100), (int16_t)(t_y/100)); // in cm 
       addJson("L", last_dur); 
@@ -341,7 +343,7 @@ void Notify() {
       addJson("FT", flags&R_F_ISTASK);
       addJson("FM", flags&R_F_ISTASKMOV);
       addJson("TG", task_target);
-      addJson("TP", task_progress); 
+//      addJson("TP", task_progress); 
       break;
     default:;
    }
@@ -409,23 +411,42 @@ void StopDrive()
 
 void StartTask() 
 {
-  task_progress=0;
+//  task_progress=0;
   t_nx=0; t_ny=V_NORM;
   t_x=t_y=0;
   task_pid_cnt=0;
-  cmd_power[0]=cmd_power[1]=M_POW_LOW;
-  drv_dir[0]=drv_dir[1]=1;
+  cmd_power[0]=cmd_power[1]=M_POW_LOW;  
+  if(F_ISTASKMOV()) { 
+    drv_dir[0]=drv_dir[1]=1;
+  } else { // rot
+    if(task_target>0) { // clockwise
+      drv_dir[0]=1; drv_dir[1]=-1; 
+    } else { //counterclockwise
+      drv_dir[0]=-1; drv_dir[1]=1; 
+    }
+  }
   StartDrive();
 }
 
 void StopTask() 
 {
   StopDrive();
+  F_CLEARTASK();
 }
 
 boolean TrackTask() 
 {
-  return task_progress>=task_target;
+  //if(F_ISTASKMOV()) return task_progress>=task_target;
+  if(F_ISTASKMOV()) return t_y/10>=task_target;
+  else {
+    return t_ny<=0; // 90 grad for test
+    /*
+    if(task_target>0) { //clockwise
+     
+    }
+    else { //counterclockwise
+    }*/
+  }
 }
   
 void ReadEnc()
@@ -459,7 +480,7 @@ void ReadEnc()
     y+=(int32_t)ny*dd/(2*V_NORM); // in 10th mm
 
 // task locals
-    task_progress += dd/2/10; // in mm (ONLY FOR TM !!!)  
+//    task_progress += dd/2/10; // in mm (ONLY FOR TM !!!)  
     tx=-t_ny; ty=t_nx;     
     tx += (int32_t)t_nx*df/WHEEL_BASE_MM_10;
     ty += (int32_t)t_ny*df/WHEEL_BASE_MM_10;
@@ -478,15 +499,20 @@ void PID(uint16_t ctime)
   if(ctime>0) {
     uint8_t t_rate[2];
     uint8_t i;
+    int16_t t_p;
     t_rate[0]=trg_rate[0]; t_rate[1]=trg_rate[1];
     if(F_ISTASKANY()) {
-      logr[pid_log_ptr].pid_t_err=t_x/100;  // cm
-      for(i=0; i<2; i++) {
-        if(task_progress<task_target/2) t_rate[i] = t_rate[i] + (uint32_t)t_rate[i]*task_progress*2/task_target; //*1..2
-        else {
-          t_rate[i] = 3*t_rate[i] - (uint32_t)t_rate[i]*task_progress*2/task_target; //*2..1
+      if(F_ISTASKMOV()) {
+        t_p=t_y/10;
+        logr[pid_log_ptr].pid_t_err=t_x/100;  // cm
+        for(i=0; i<2; i++) {
+          if(t_p<task_target/2) t_rate[i] = t_rate[i] + (uint32_t)t_rate[i]*t_p*2/task_target; //*1..2
+          else {
+            t_rate[i] = 3*t_rate[i] - (uint32_t)t_rate[i]*t_p*2/task_target; //*2..1
+          }
         }
-      }      
+      } else { // rotate
+      }     
     }
     else
       logr[pid_log_ptr].pid_t_err=0;    
@@ -603,11 +629,16 @@ int8_t Parse()
     pos++;
     pos = bctoi(pos, &m);      
     if(!m) return EnumErrorBadParam;
-    task_target=m*10;
+    task_target=m*10; // mm
     F_SETTASKMOV();
     return EnumCmdTaskMove;
   }
   else if((pos=Match("TR"))) {
+    pos++;
+    pos = bctoi(pos, &m);      
+    if(!m) return EnumErrorBadParam;
+    task_target=m; // deg    
+    F_SETTASKROT();
     return EnumCmdTaskMove;
   }
   else if((pos=Match("T"))) {
@@ -693,3 +724,65 @@ void baseInterrupt(uint8_t i) {
   if(v_enc_cnt[i]==255) F_SETOVERFLOW();
   else v_enc_cnt[i]++; 
 } 
+
+
+/*
+
+float sine(float x)
+{
+    const float B = 4/pi;
+    const float C = -4/(pi*pi);
+
+    float y = B * x + C * x * abs(x);
+
+    #ifdef EXTRA_PRECISION
+    //  const float Q = 0.775;
+        const float P = 0.225;
+
+        y = P * (y * abs(y) - y) + y;   // Q * y + P * y * abs(y)
+    #endif
+}
+
+                int yt[]={0,0, 0, -100, -100, 71, -71, 50, -50};
+		int xt[]={0,314, -314, 157, -157, 79, -79, 52, -52};
+                int xtd[]={0,180, -180, 90, -90, 45, -45, 30, -30};
+		for(int i=0; i<xt.length; i++) {
+			System.out.println(i + " : "+xt[i]+" : "+sin32d(xtd[i])+" : "+yt[i]);
+		}
+
+*/
+/*
+  // tests: 0->0
+    // 314->0
+    // -314->0
+    // 157->100
+    // -157->-100
+    // 79->71
+    // -79->-71
+    // 52->50
+    // -52->-50
+*/  
+int32_t sin32(int32_t xd)  // xd: -PI*D...PI*D; D=100
+{
+    const int32_t D = 100;
+    const int32_t PI_D = 314;
+    const int32_t PD = 23;
+    int32_t xa = xd>0 ? xd : -xd; 
+    int32_t yd = (4*D*xd-4*D*xd*xa/PI_D)/PI_D;    
+    xa = yd >0 ? yd : -yd;
+    yd+=(PD*yd*xa/D-PD*yd)/D;
+    return yd;
+}
+
+int32_t sin32d(int32_t xd)  // xd: -180...180; D=100
+{
+    const int32_t D = 100;
+    const int32_t PI_D = 314;
+    const int32_t PD = 23;
+    int32_t xa = xd>0 ? xd : -xd; 
+    int32_t yd = (4*D*xd-4*D*xd*xa/180)/180;    
+    xa = yd >0 ? yd : -yd;
+    yd+=(PD*yd*xa/D-PD*yd)/D;
+    return yd;
+}
+
