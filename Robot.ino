@@ -55,7 +55,7 @@ const unsigned int M_COAST_TIME=400;
 const unsigned int M_WUP_PID_CNT=1;
 
 const unsigned int TASK_TIMEOUT = 10000; 
-const unsigned int TASK_PID_C = 2; // track tast every ... PID cycle
+const unsigned int TASK_PID_C = 1; // track tast every ... PID cycle
 
 const unsigned int R_F_ISDRIVE=0x01;
 const unsigned int R_F_ISOVERFLOW=0x02;
@@ -114,10 +114,13 @@ uint8_t cmd_id=0;
 
 // tracking
 #define V_NORM 10000
+#define V_NORM_PI 31400
+
 int32_t dist=0;  // in 10thmm
 int16_t diff=0;  // in 10tmm
 int32_t x=0, y=0;// in 10thmm
 int16_t nx=0, ny=V_NORM;
+int32_t angle=0; 
 
 int16_t us_dist=9999; 
 volatile uint8_t v_enc_cnt[2]={0,0}; 
@@ -256,6 +259,7 @@ void loop()
       x=y=0;
       nx=0; ny=V_NORM;
       dist=diff=0;
+      angle=0;
     } 
     else if(cmdResult==EnumCmdTest) { ; }
     else if(cmdResult==EnumCmdTaskMove) {
@@ -304,7 +308,7 @@ void Notify() {
       addJsonArr16_2("R", last_enc_rate[0], last_enc_rate[1]);
       addJsonArr16_2("EC", last_enc_cnt[0], last_enc_cnt[1]);
       addJson("OVF", (int16_t)(F_ISOVERFLOW()));
-      addJson("U", (int16_t)(us_dist));
+      addJson("U", (int16_t)(us_dist));      
       addJson("FT", flags&R_F_ISTASK);
       addJson("FM", flags&R_F_ISTASKMOV);
       addJson("FR", flags&R_F_ISTASKROT);
@@ -312,6 +316,8 @@ void Notify() {
 //      addJson("TP", task_progress);
       addJsonArr16_2("TN", (int16_t)t_nx, (int16_t)t_ny); // in normval
       addJsonArr16_2("TX", (int16_t)(t_x/100), (int16_t)(t_y/100)); // in cm 
+      addJson("NSIN", ivsin(0, V_NORM, nx, ny));
+      addJson("ANG", angle);
       addJson("L", last_dur); 
       break;
     case EnumCmdLog: {
@@ -439,13 +445,13 @@ boolean TrackTask()
   //if(F_ISTASKMOV()) return task_progress>=task_target;
   if(F_ISTASKMOV()) return t_y/10>=task_target;
   else {
-    return t_ny<=0; // 90 grad for test
-    /*
+    // test. use global angle. So do this only after Reset !!!
     if(task_target>0) { //clockwise
-     
+      return angle<task_target;
     }
     else { //counterclockwise
-    }*/
+      return angle>task_target;
+    }
   }
 }
   
@@ -475,6 +481,7 @@ void ReadEnc()
     tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
     tx=(int32_t)tx*V_NORM/tl;  
     ty=(int32_t)ty*V_NORM/tl;
+    angle += ivsin(nx, ny, ty, -tx);
     nx=ty; ny=-tx;
     x+=(int32_t)nx*dd/(2*V_NORM); // in 10th mm
     y+=(int32_t)ny*dd/(2*V_NORM); // in 10th mm
@@ -637,7 +644,8 @@ int8_t Parse()
     pos++;
     pos = bctoi(pos, &m);      
     if(!m) return EnumErrorBadParam;
-    task_target=m; // deg    
+    //task_target=m; // deg    
+    task_target=(int32_t)m*V_NORM_PI/180;    
     F_SETTASKROT();
     return EnumCmdTaskMove;
   }
@@ -693,6 +701,23 @@ uint16_t isqrt32(uint32_t n)
         }  
     } 
     
+int32_t isin32d(int32_t xd)  // xd: -180...180; D=100
+{
+    const int32_t D = 100;
+    const int32_t PI_D = 314;
+    const int32_t PD = 23;
+    int32_t xa = xd>0 ? xd : -xd; 
+    int32_t yd = (4*D*xd-4*D*xd*xa/180)/180;    
+    xa = yd >0 ? yd : -yd;
+    yd+=(PD*yd*xa/D-PD*yd)/D;
+    return yd;
+}
+   
+int16_t ivsin(int16_t ax, int16_t ay, int16_t bx, int16_t by) 
+{
+  return ((int32_t)ax*by-(int32_t)ay*bx)/V_NORM;
+}
+
  void addJson(const char *name, int16_t value) {
   Serial.print("\"");
   Serial.print(name);
@@ -762,6 +787,7 @@ float sine(float x)
     // 52->50
     // -52->-50
 */  
+/*
 int32_t sin32(int32_t xd)  // xd: -PI*D...PI*D; D=100
 {
     const int32_t D = 100;
@@ -773,16 +799,5 @@ int32_t sin32(int32_t xd)  // xd: -PI*D...PI*D; D=100
     yd+=(PD*yd*xa/D-PD*yd)/D;
     return yd;
 }
-
-int32_t sin32d(int32_t xd)  // xd: -180...180; D=100
-{
-    const int32_t D = 100;
-    const int32_t PI_D = 314;
-    const int32_t PD = 23;
-    int32_t xa = xd>0 ? xd : -xd; 
-    int32_t yd = (4*D*xd-4*D*xd*xa/180)/180;    
-    xa = yd >0 ? yd : -yd;
-    yd+=(PD*yd*xa/D-PD*yd)/D;
-    return yd;
-}
+*/
 
