@@ -316,8 +316,8 @@ void Notify() {
 //      addJson("TP", task_progress);
       addJsonArr16_2("TN", (int16_t)t_nx, (int16_t)t_ny); // in normval
       addJsonArr16_2("TX", (int16_t)(t_x/100), (int16_t)(t_y/100)); // in cm 
-      addJson("NSIN", ivsin(0, V_NORM, nx, ny));
-      addJson("ANG", angle);
+      addJson("NSIN", invsin(0, V_NORM, nx, ny)/100);
+      addJson("ANG", angle/100);
       addJson("L", last_dur); 
       break;
     case EnumCmdLog: {
@@ -447,10 +447,10 @@ boolean TrackTask()
   else {
     // test. use global angle. So do this only after Reset !!!
     if(task_target>0) { //clockwise
-      return angle<task_target;
+      return angle>=task_target;
     }
     else { //counterclockwise
-      return angle>task_target;
+      return angle<=task_target;
     }
   }
 }
@@ -481,7 +481,7 @@ void ReadEnc()
     tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
     tx=(int32_t)tx*V_NORM/tl;  
     ty=(int32_t)ty*V_NORM/tl;
-    angle += ivsin(nx, ny, ty, -tx);
+    angle += invsin(nx, ny, ty, -tx);
     nx=ty; ny=-tx;
     x+=(int32_t)nx*dd/(2*V_NORM); // in 10th mm
     y+=(int32_t)ny*dd/(2*V_NORM); // in 10th mm
@@ -713,9 +713,9 @@ int32_t isin32d(int32_t xd)  // xd: -180...180; D=100
     return yd;
 }
    
-int16_t ivsin(int16_t ax, int16_t ay, int16_t bx, int16_t by) 
+int32_t invsin(int16_t ax, int16_t ay, int16_t bx, int16_t by) 
 {
-  return ((int32_t)ax*by-(int32_t)ay*bx)/V_NORM;
+  return -((int32_t)ax*by-(int32_t)ay*bx)/V_NORM;
 }
 
  void addJson(const char *name, int16_t value) {
