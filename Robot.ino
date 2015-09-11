@@ -21,6 +21,12 @@
 
 // Besides, the different pins for the separate analogwrite channels should be on the separate timer+compare 
 
+int32_t isin32d(int32_t xd);
+uint16_t isqrt32(uint32_t n);  
+int32_t invsin(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm); 
+void addJson(const char *name, int16_t value);
+void addJsonArr16_2(const char *name, int16_t v1, int16_t v2);
+
 #define TTY_SPEED 38400
 //#define TTY_SPEED 9600
 
@@ -129,7 +135,7 @@ volatile uint8_t v_es[2]={0,0};
 enum EnumCmd { EnumCmdDrive=1, EnumCmdTest=2, EnumCmdStop=3, EnumCmdLog=4, EnumCmdContinueDrive=5, EnumCmdRst=6, EnumCmdTaskMove=7, EnumCmdTaskRotate=8};  
 enum EnumError { EnumErrorUnknown=-1, EnumErrorBadSyntax=-2, EnumErrorBadParam=-3, EnumErrorNone=-100};  
 
-int16_t task_target=0;   // in mm
+int32_t task_target=0;   // in mm
 //int16_t task_progress=0; // in cm
 int16_t t_nx, t_ny;
 int16_t t_x, t_y; //in 10thmm - up to 320 cm
@@ -164,6 +170,7 @@ struct __attribute__((__packed__)) LogRec {
   //int8_t pid_log_ierr[2];
   uint8_t pid_log_pow[2];
   int8_t pid_t_err;
+  int8_t an100;
 } logr[PID_LOG_SZ];
 
 
@@ -262,11 +269,11 @@ void loop()
       angle=0;
     } 
     else if(cmdResult==EnumCmdTest) { ; }
-    else if(cmdResult==EnumCmdTaskMove) {
+    else if(cmdResult==EnumCmdTaskMove || cmdResult==EnumCmdTaskRotate) {
         lastCommandTime = millis();        
         StartTask();
     }
-    else if(cmdResult==EnumCmdTaskRotate) { ; }
+  //  else if(cmdResult==EnumCmdTaskRotate) { ; }
     delay(RESP_TIMEOUT);
     Notify(); 
   } // read serial
@@ -316,7 +323,7 @@ void Notify() {
 //      addJson("TP", task_progress);
       addJsonArr16_2("TN", (int16_t)t_nx, (int16_t)t_ny); // in normval
       addJsonArr16_2("TX", (int16_t)(t_x/100), (int16_t)(t_y/100)); // in cm 
-      addJson("NSIN", invsin(0, V_NORM, nx, ny)/100);
+      addJson("NSIN", invsin(0, V_NORM, nx, ny, V_NORM)/100);
       addJson("ANG", angle/100);
       addJson("L", last_dur); 
       break;
@@ -334,7 +341,8 @@ void Notify() {
 //        Serial.print("("); Serial.print(logr[i].pid_log_ierr[0]);Serial.print(","); Serial.print(logr[i].pid_log_ierr[1]); Serial.print(")"); 
         Serial.print("("); Serial.print(logr[i].pid_log_derr[0]);Serial.print(","); Serial.print(logr[i].pid_log_derr[1]); Serial.print(")"); 
         Serial.print("("); Serial.print(logr[i].pid_log_pow[0]);Serial.print(","); Serial.print(logr[i].pid_log_pow[1]); Serial.print("),"); 
-        Serial.print(logr[i].pid_t_err); Serial.print(";"); 
+        Serial.print(logr[i].pid_t_err); Serial.print(","); 
+        Serial.print(logr[i].an100); Serial.print(";"); 
         logr[i].pid_log_idx=255; // mark as empty      
         delay(10);
         }
@@ -346,6 +354,7 @@ void Notify() {
       break;
     }
     case EnumCmdTaskMove:       
+    case EnumCmdTaskRotate:           
       addJson("FT", flags&R_F_ISTASK);
       addJson("FM", flags&R_F_ISTASKMOV);
       addJson("TG", task_target);
@@ -481,7 +490,7 @@ void ReadEnc()
     tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
     tx=(int32_t)tx*V_NORM/tl;  
     ty=(int32_t)ty*V_NORM/tl;
-    angle += invsin(nx, ny, ty, -tx);
+    angle += invsin(nx, ny, ty, -tx, V_NORM);
     nx=ty; ny=-tx;
     x+=(int32_t)nx*dd/(2*V_NORM); // in 10th mm
     y+=(int32_t)ny*dd/(2*V_NORM); // in 10th mm
@@ -549,6 +558,7 @@ void PID(uint16_t ctime)
       //logr[pid_log_ptr].pid_log_pow[i]=pow;      
       logr[pid_log_ptr].pid_log_pow[i]=cur_power[i];      
     } 
+  logr[pid_log_ptr].an100=angle/100;  
   logr[pid_log_ptr].cmd_id=cmd_id;
   logr[pid_log_ptr].ctime=ctime;
   logr[pid_log_ptr].pid_log_idx=pid_cnt++;   
@@ -647,7 +657,7 @@ int8_t Parse()
     //task_target=m; // deg    
     task_target=(int32_t)m*V_NORM_PI/180;    
     F_SETTASKROT();
-    return EnumCmdTaskMove;
+    return EnumCmdTaskRotate;
   }
   else if((pos=Match("T"))) {
     return EnumCmdTest;
@@ -686,57 +696,6 @@ byte bctoi(byte index, int16_t *val)
   return index;
 }
 
-uint16_t isqrt32(uint32_t n)  
-    {  
-        uint16_t c = 0x8000;  
-        uint16_t g = 0x8000;  
-      
-        for(;;) {  
-            if((uint32_t)g*g > n)  
-                g ^= c;  
-            c >>= 1;  
-            if(c == 0)  
-                return g;  
-            g |= c;  
-        }  
-    } 
-    
-int32_t isin32d(int32_t xd)  // xd: -180...180; D=100
-{
-    const int32_t D = 100;
-    const int32_t PI_D = 314;
-    const int32_t PD = 23;
-    int32_t xa = xd>0 ? xd : -xd; 
-    int32_t yd = (4*D*xd-4*D*xd*xa/180)/180;    
-    xa = yd >0 ? yd : -yd;
-    yd+=(PD*yd*xa/D-PD*yd)/D;
-    return yd;
-}
-   
-int32_t invsin(int16_t ax, int16_t ay, int16_t bx, int16_t by) 
-{
-  return -((int32_t)ax*by-(int32_t)ay*bx)/V_NORM;
-}
-
- void addJson(const char *name, int16_t value) {
-  Serial.print("\"");
-  Serial.print(name);
-  Serial.print("\":");
-  Serial.print(value);
-  Serial.print(",");
- }
-
- 
- void addJsonArr16_2(const char *name, int16_t v1, int16_t v2) {
-    Serial.print("\"");
-    Serial.print(name);
-    Serial.print("\":[");
-    Serial.print(v1);
-    Serial.print(",");
-    Serial.print(v2);
-    Serial.print("],");
- }
- 
 void encodeInterrupt_1() { baseInterrupt(0); }
 
 void encodeInterrupt_2() { baseInterrupt(1); } 
@@ -751,53 +710,4 @@ void baseInterrupt(uint8_t i) {
 } 
 
 
-/*
-
-float sine(float x)
-{
-    const float B = 4/pi;
-    const float C = -4/(pi*pi);
-
-    float y = B * x + C * x * abs(x);
-
-    #ifdef EXTRA_PRECISION
-    //  const float Q = 0.775;
-        const float P = 0.225;
-
-        y = P * (y * abs(y) - y) + y;   // Q * y + P * y * abs(y)
-    #endif
-}
-
-                int yt[]={0,0, 0, -100, -100, 71, -71, 50, -50};
-		int xt[]={0,314, -314, 157, -157, 79, -79, 52, -52};
-                int xtd[]={0,180, -180, 90, -90, 45, -45, 30, -30};
-		for(int i=0; i<xt.length; i++) {
-			System.out.println(i + " : "+xt[i]+" : "+sin32d(xtd[i])+" : "+yt[i]);
-		}
-
-*/
-/*
-  // tests: 0->0
-    // 314->0
-    // -314->0
-    // 157->100
-    // -157->-100
-    // 79->71
-    // -79->-71
-    // 52->50
-    // -52->-50
-*/  
-/*
-int32_t sin32(int32_t xd)  // xd: -PI*D...PI*D; D=100
-{
-    const int32_t D = 100;
-    const int32_t PI_D = 314;
-    const int32_t PD = 23;
-    int32_t xa = xd>0 ? xd : -xd; 
-    int32_t yd = (4*D*xd-4*D*xd*xa/PI_D)/PI_D;    
-    xa = yd >0 ? yd : -yd;
-    yd+=(PD*yd*xa/D-PD*yd)/D;
-    return yd;
-}
-*/
 
