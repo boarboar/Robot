@@ -96,9 +96,11 @@ const unsigned int R_F_ISTASKROT=0x16;
 */
 
 // for 7.5v
-#define M_POW_LOW   30
+#define M_POW_LOWEST   10
+//#define M_POW_LOW   30
 #define M_POW_HIGH 100
 #define M_POW_MAX  120
+#define M_POW_STEP 2
 
 #define M_PID_KP   2
 #define M_PID_KI   0
@@ -135,10 +137,14 @@ volatile uint8_t v_es[2]={0,0};
 enum EnumCmd { EnumCmdDrive=1, EnumCmdTest=2, EnumCmdStop=3, EnumCmdLog=4, EnumCmdContinueDrive=5, EnumCmdRst=6, EnumCmdTaskMove=7, EnumCmdTaskRotate=8};  
 enum EnumError { EnumErrorUnknown=-1, EnumErrorBadSyntax=-2, EnumErrorBadParam=-3, EnumErrorNone=-100};  
 
-int32_t task_target=0;   // in mm
+int32_t task_target=0;   // in mm or degrees
 //int16_t task_progress=0; // in cm
+
 int16_t t_nx, t_ny;
 int16_t t_x, t_y; //in 10thmm - up to 320 cm
+int16_t t_ang;
+
+//int32_t t_x0, t_y0, t_ang0;
 
 int8_t cmdResult=EnumErrorNone;
 uint8_t drv_dir[2]={0,0}; 
@@ -149,13 +155,14 @@ uint8_t trg_rate[2]={0,0};
 uint8_t last_enc_cnt[2]={0,0}; 
 uint8_t last_enc_rate[2]={0,0}; 
 uint8_t calib_enc_rate=0; // target rate (counts per RATE_SAMPLE_PERIOD) for 100 power
+uint8_t pow_low;
 
 int8_t last_err[2]={0,0};
 int8_t int_err[2]={0,0};
 
 uint8_t flags=0; 
 
-#define PID_LOG_SZ 10
+#define PID_LOG_SZ 8
 uint8_t pid_cnt=0;
 uint8_t pid_log_ptr=0;
 
@@ -170,14 +177,15 @@ struct __attribute__((__packed__)) LogRec {
   //int8_t pid_log_ierr[2];
   uint8_t pid_log_pow[2];
   int8_t pid_t_err;
-  int8_t an100;
+  int16_t ang;
 } logr[PID_LOG_SZ];
 
 
 void setup()
 { 
+  uint8_t i;
   int ports[6]={M1_OUT_1,M1_OUT_2,M2_OUT_1,M2_OUT_2, M1_EN, M2_EN };
-  for(int i=0;i<6;i++) {
+  for(i=0;i<6;i++) {
     digitalWrite(ports[i], LOW); 
     pinMode(ports[i], OUTPUT);
   }
@@ -194,7 +202,7 @@ void setup()
   pinMode(US_IN, INPUT);     
   
   pinMode(RED_LED, OUTPUT);     
-  for(int i=0; i<5; i++) {
+  for(i=0; i<5; i++) {
     digitalWrite(RED_LED, HIGH); delay(100); digitalWrite(RED_LED, LOW); 
   }
   Serial.begin(TTY_SPEED);
@@ -203,14 +211,23 @@ void setup()
    
   // calibration sequence
   F_SETDRIVE();
-  // warmup (TODO - make step up)
-  Drive(1, M_POW_HIGH/2, 1, M_POW_HIGH/2);
-  delay(RATE_SAMPLE_PERIOD); 
-  Drive(1, M_POW_HIGH*2/3, 1, M_POW_HIGH*2/3);
-  delay(RATE_SAMPLE_PERIOD);     
+  pow_low=M_POW_LOWEST;
+  ReadEnc();
+  last_enc_cnt[0]=last_enc_cnt[1]=0;
+  while(1) {
+   Drive(1, pow_low, 1, pow_low);
+   delay(RATE_SAMPLE_PERIOD);
+   ReadEnc();   
+   if(last_enc_cnt[0]>2 && last_enc_cnt[1]>2) break;
+   pow_low+=M_POW_STEP;
+  }
+  pow_low-=M_POW_STEP; // still lower
+  
+  // to normal power
   Drive(1, M_POW_HIGH, 1, M_POW_HIGH);
-  delay(RATE_SAMPLE_PERIOD);   
-  // now sample for twice the time
+  delay(RATE_SAMPLE_PERIOD); 
+  // now sample the normal power for twice the time
+  Drive(1, M_POW_HIGH, 1, M_POW_HIGH);
   ReadEnc();
   delay(RATE_SAMPLE_PERIOD*2); // calibration
   ReadEnc();
@@ -311,6 +328,8 @@ void Notify() {
       }
       break; 
     case EnumCmdTest:       
+      addJson("PL", pow_low);
+ //     addJson("PLr", pow_low_r); 
       addJson("TB", calib_enc_rate); addJson("TD", last_dur); 
       addJsonArr16_2("R", last_enc_rate[0], last_enc_rate[1]);
       addJsonArr16_2("EC", last_enc_cnt[0], last_enc_cnt[1]);
@@ -320,11 +339,12 @@ void Notify() {
       addJson("FM", flags&R_F_ISTASKMOV);
       addJson("FR", flags&R_F_ISTASKROT);
       addJson("TG", task_target);
+      delay(10);
 //      addJson("TP", task_progress);
       addJsonArr16_2("TN", (int16_t)t_nx, (int16_t)t_ny); // in normval
       addJsonArr16_2("TX", (int16_t)(t_x/100), (int16_t)(t_y/100)); // in cm 
-      addJson("NSIN", invsin(0, V_NORM, nx, ny, V_NORM)/100);
-      addJson("ANG", angle/100);
+      //addJson("NSIN", invsin(0, V_NORM, nx, ny, V_NORM)/100);
+      addJson("ANG", (int32_t)t_ang*180/V_NORM_PI);
       addJson("L", last_dur); 
       break;
     case EnumCmdLog: {
@@ -342,7 +362,7 @@ void Notify() {
         Serial.print("("); Serial.print(logr[i].pid_log_derr[0]);Serial.print(","); Serial.print(logr[i].pid_log_derr[1]); Serial.print(")"); 
         Serial.print("("); Serial.print(logr[i].pid_log_pow[0]);Serial.print(","); Serial.print(logr[i].pid_log_pow[1]); Serial.print("),"); 
         Serial.print(logr[i].pid_t_err); Serial.print(","); 
-        Serial.print(logr[i].an100); Serial.print(";"); 
+        Serial.print(logr[i].ang); Serial.print(";"); 
         logr[i].pid_log_idx=255; // mark as empty      
         delay(10);
         }
@@ -428,16 +448,17 @@ void StartTask()
 {
 //  task_progress=0;
   t_nx=0; t_ny=V_NORM;
-  t_x=t_y=0;
+  t_x=t_y=0; t_ang=0;
+  //t_x0=x; t_y0=y; t_ang0=angle; 
   task_pid_cnt=0;
-  cmd_power[0]=cmd_power[1]=M_POW_LOW;  
+  cmd_power[0]=cmd_power[1]=pow_low;  
   if(F_ISTASKMOV()) { 
     drv_dir[0]=drv_dir[1]=1;
   } else { // rot
     if(task_target>0) { // clockwise
-      drv_dir[0]=1; drv_dir[1]=-1; 
+      drv_dir[0]=1; drv_dir[1]=2; 
     } else { //counterclockwise
-      drv_dir[0]=-1; drv_dir[1]=1; 
+      drv_dir[0]=2; drv_dir[1]=1; 
     }
   }
   StartDrive();
@@ -456,10 +477,10 @@ boolean TrackTask()
   else {
     // test. use global angle. So do this only after Reset !!!
     if(task_target>0) { //clockwise
-      return angle>=task_target;
+      return t_ang>=task_target;
     }
     else { //counterclockwise
-      return angle<=task_target;
+      return t_ang<=task_target;
     }
   }
 }
@@ -497,12 +518,15 @@ void ReadEnc()
 
 // task locals
 //    task_progress += dd/2/10; // in mm (ONLY FOR TM !!!)  
+// THIS SHOULDNT BE NECESSARY. just remember the start task position and angle
+
     tx=-t_ny; ty=t_nx;     
     tx += (int32_t)t_nx*df/WHEEL_BASE_MM_10;
     ty += (int32_t)t_ny*df/WHEEL_BASE_MM_10;
     tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
     tx=(int32_t)tx*V_NORM/tl;  
     ty=(int32_t)ty*V_NORM/tl;
+    t_ang += invsin(t_nx, t_ny, ty, -tx, V_NORM);
     t_nx=ty; t_ny=-tx;
     t_x+=(int32_t)t_nx*dd/(2*V_NORM); // in 10th mm
     t_y+=(int32_t)t_ny*dd/(2*V_NORM); // in 10th mm
@@ -517,6 +541,7 @@ void PID(uint16_t ctime)
     uint8_t i;
     int16_t t_p;
     t_rate[0]=trg_rate[0]; t_rate[1]=trg_rate[1];
+    
     if(F_ISTASKANY()) {
       if(F_ISTASKMOV()) {
         t_p=t_y/10;
@@ -558,7 +583,7 @@ void PID(uint16_t ctime)
       //logr[pid_log_ptr].pid_log_pow[i]=pow;      
       logr[pid_log_ptr].pid_log_pow[i]=cur_power[i];      
     } 
-  logr[pid_log_ptr].an100=angle/100;  
+  logr[pid_log_ptr].ang=angle*180/V_NORM_PI;  
   logr[pid_log_ptr].cmd_id=cmd_id;
   logr[pid_log_ptr].ctime=ctime;
   logr[pid_log_ptr].pid_log_idx=pid_cnt++;   
@@ -629,8 +654,8 @@ int8_t Parse()
       if(m<-255 || m>254) return EnumErrorBadParam;
       if(buf[pos] != (i==0 ? ',' : 0)) return EnumErrorBadSyntax;
       if(m==0)       { if(cmd_power[i]) { cmd_power[i]=0; chg=true;}} 
-      else if (m>0)  { if(m<M_POW_LOW) m=M_POW_LOW; if(drv_dir[i]!=1 || cmd_power[i]!=m) { cmd_power[i]=m; drv_dir[i]=1; chg=true;} } 
-      else           { if((-m)<M_POW_LOW) m=-M_POW_LOW; if(drv_dir[i]!=2 || cmd_power[i]!=-m) {cmd_power[i]=-m; drv_dir[i]=2; chg=true;} }  
+      else if (m>0)  { if(m<pow_low) m=pow_low; if(drv_dir[i]!=1 || cmd_power[i]!=m) { cmd_power[i]=m; drv_dir[i]=1; chg=true;} } 
+      else           { if((-m)<pow_low) m=-pow_low; if(drv_dir[i]!=2 || cmd_power[i]!=-m) {cmd_power[i]=-m; drv_dir[i]=2; chg=true;} }  
     }
     if(!cmd_power[0] && !cmd_power[1]) return EnumCmdStop;
     return chg ? EnumCmdDrive : EnumCmdContinueDrive;
