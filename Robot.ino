@@ -1,4 +1,3 @@
-
 // TODO
 // 
 // do not start moving fwd on US condition
@@ -23,7 +22,8 @@
 
 int32_t isin32d(int32_t xd);
 uint16_t isqrt32(uint32_t n);  
-int32_t invsin(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm); 
+//int32_t invsin(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm); 
+int16_t invsin(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm); 
 void addJson(const char *name, int16_t value);
 void addJsonArr16_2(const char *name, int16_t v1, int16_t v2);
 
@@ -45,7 +45,8 @@ void addJsonArr16_2(const char *name, int16_t v1, int16_t v2);
 #define US_OUT   P1_7
 
 // common vars 
-const unsigned int PID_TIMEOUT = 100;
+//const unsigned int PID_TIMEOUT = 100;
+const unsigned int PID_TIMEOUT = 200;
 //const unsigned int RESP_TIMEOUT = 90;
 const unsigned int RESP_TIMEOUT = 25; // C_T+R_T >= 75ms
 const unsigned int CMD_TIMEOUT = 600; 
@@ -61,7 +62,7 @@ const unsigned int M_COAST_TIME=400;
 const unsigned int M_WUP_PID_CNT=1;
 
 const unsigned int TASK_TIMEOUT = 10000; 
-const unsigned int TASK_PID_C = 1; // track tast every ... PID cycle
+//const unsigned int TASK_PID_C = 1; // track tast every ... PID cycle
 
 const unsigned int R_F_ISDRIVE=0x01;
 const unsigned int R_F_ISOVERFLOW=0x02;
@@ -116,7 +117,7 @@ uint32_t lastPidTime;
 uint16_t last_dur=0;
 //uint16_t us_meas_dur=0;
 
-uint8_t task_pid_cnt=0;
+//uint8_t task_pid_cnt=0;
 
 uint8_t cmd_id=0;
 
@@ -143,8 +144,7 @@ int32_t task_target=0;   // in mm or degrees
 int16_t t_nx, t_ny;
 int16_t t_x, t_y; //in 10thmm - up to 320 cm
 int16_t t_ang;
-
-//int32_t t_x0, t_y0, t_ang0;
+int8_t  t_adv;
 
 int8_t cmdResult=EnumErrorNone;
 uint8_t drv_dir[2]={0,0}; 
@@ -155,6 +155,7 @@ uint8_t trg_rate[2]={0,0};
 uint8_t last_enc_cnt[2]={0,0}; 
 uint8_t last_enc_rate[2]={0,0}; 
 uint8_t calib_enc_rate=0; // target rate (counts per RATE_SAMPLE_PERIOD) for 100 power
+uint8_t calib_enc_rate_low=0; // target rate (counts per RATE_SAMPLE_PERIOD) for low power
 uint8_t pow_low;
 
 int8_t last_err[2]={0,0};
@@ -221,17 +222,22 @@ void setup()
    if(last_enc_cnt[0]>2 && last_enc_cnt[1]>2) break;
    pow_low+=M_POW_STEP;
   }
-  pow_low-=M_POW_STEP; // still lower
+  //pow_low-=M_POW_STEP; // still lower
   
-  // to normal power
-  Drive(1, M_POW_HIGH, 1, M_POW_HIGH);
-  delay(RATE_SAMPLE_PERIOD); 
-  // now sample the normal power for twice the time
-  Drive(1, M_POW_HIGH, 1, M_POW_HIGH);
   ReadEnc();
   delay(RATE_SAMPLE_PERIOD*2); // calibration
   ReadEnc();
-  calib_enc_rate = (last_enc_cnt[0]+last_enc_cnt[1])/4;
+  calib_enc_rate_low = (last_enc_cnt[0]+last_enc_cnt[1])/2/2;
+  
+  // to 100% power, warmup
+  Drive(1, M_POW_HIGH, 1, M_POW_HIGH);
+  delay(RATE_SAMPLE_PERIOD); 
+  // now sample the normal power for twice the time
+  //Drive(1, M_POW_HIGH, 1, M_POW_HIGH);
+  ReadEnc();
+  delay(RATE_SAMPLE_PERIOD*2); // calibration
+  ReadEnc();
+  calib_enc_rate = (last_enc_cnt[0]+last_enc_cnt[1])/2/2;
   StopDrive();
   
   digitalWrite(RED_LED, LOW);
@@ -254,10 +260,10 @@ void loop()
     if (F_ISDRIVE()) {
       PID(ctime); 
       if(F_ISTASKANY()) { 
-        if((++task_pid_cnt)%TASK_PID_C==0) { // task tracking cycle
-          task_pid_cnt=0;
+        //if((++task_pid_cnt)%TASK_PID_C==0) { // task tracking cycle
+        //  task_pid_cnt=0;
           if(TrackTask() || CheckCommandTimeout(TASK_TIMEOUT)) StopTask();
-        }
+        //}
       } else if(CheckCommandTimeout(CMD_TIMEOUT)) StopDrive();
     }
     readUSDist(); 
@@ -290,7 +296,6 @@ void loop()
         lastCommandTime = millis();        
         StartTask();
     }
-  //  else if(cmdResult==EnumCmdTaskRotate) { ; }
     delay(RESP_TIMEOUT);
     Notify(); 
   } // read serial
@@ -330,9 +335,12 @@ void Notify() {
     case EnumCmdTest:       
       addJson("PL", pow_low);
  //     addJson("PLr", pow_low_r); 
-      addJson("TB", calib_enc_rate); addJson("TD", last_dur); 
+      addJson("TB", calib_enc_rate); 
+      addJson("TBL", calib_enc_rate_low); 
+      addJson("TD", last_dur); 
       addJsonArr16_2("R", last_enc_rate[0], last_enc_rate[1]);
       addJsonArr16_2("EC", last_enc_cnt[0], last_enc_cnt[1]);
+      delay(10);
       addJson("OVF", (int16_t)(F_ISOVERFLOW()));
       addJson("U", (int16_t)(us_dist));      
       addJson("FT", flags&R_F_ISTASK);
@@ -345,6 +353,7 @@ void Notify() {
       addJsonArr16_2("TX", (int16_t)(t_x/100), (int16_t)(t_y/100)); // in cm 
       //addJson("NSIN", invsin(0, V_NORM, nx, ny, V_NORM)/100);
       addJson("ANG", (int32_t)t_ang*180/V_NORM_PI);
+      addJson("TADV", t_adv); 
       addJson("L", last_dur); 
       break;
     case EnumCmdLog: {
@@ -429,7 +438,6 @@ void StartDrive()
   pid_cnt=0;
   pid_log_ptr=0;
   lastPidTime=millis(); //NB!
-  //last_dur=0;
 }
 
 void StopDrive() 
@@ -449,8 +457,6 @@ void StartTask()
 //  task_progress=0;
   t_nx=0; t_ny=V_NORM;
   t_x=t_y=0; t_ang=0;
-  //t_x0=x; t_y0=y; t_ang0=angle; 
-  task_pid_cnt=0;
   cmd_power[0]=cmd_power[1]=pow_low;  
   if(F_ISTASKMOV()) { 
     drv_dir[0]=drv_dir[1]=1;
@@ -515,22 +521,21 @@ void ReadEnc()
     nx=ty; ny=-tx;
     x+=(int32_t)nx*dd/(2*V_NORM); // in 10th mm
     y+=(int32_t)ny*dd/(2*V_NORM); // in 10th mm
-
-// task locals
-//    task_progress += dd/2/10; // in mm (ONLY FOR TM !!!)  
-// THIS SHOULDNT BE NECESSARY. just remember the start task position and angle
-
-    tx=-t_ny; ty=t_nx;     
-    tx += (int32_t)t_nx*df/WHEEL_BASE_MM_10;
-    ty += (int32_t)t_ny*df/WHEEL_BASE_MM_10;
-    tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
-    tx=(int32_t)tx*V_NORM/tl;  
-    ty=(int32_t)ty*V_NORM/tl;
-    t_ang += invsin(t_nx, t_ny, ty, -tx, V_NORM);
-    t_nx=ty; t_ny=-tx;
-    t_x+=(int32_t)t_nx*dd/(2*V_NORM); // in 10th mm
-    t_y+=(int32_t)t_ny*dd/(2*V_NORM); // in 10th mm
- 
+    // task vars
+    if(F_ISTASKANY()) {     
+      tx=-t_ny; ty=t_nx;     
+      tx += (int32_t)t_nx*df/WHEEL_BASE_MM_10;
+      ty += (int32_t)t_ny*df/WHEEL_BASE_MM_10;
+      tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
+      tx=(int32_t)tx*V_NORM/tl;  
+      ty=(int32_t)ty*V_NORM/tl;
+      t_ang += invsin(t_nx, t_ny, ty, -tx, V_NORM);
+      if(F_ISTASKMOV()) t_adv=dd/100; // in cm     
+      else t_adv=(int32_t)invsin(t_nx, t_ny, ty, -tx, V_NORM)*180/V_NORM_PI; // not optimal
+      t_nx=ty; t_ny=-tx;
+      t_x+=(int32_t)t_nx*dd/(2*V_NORM); // in 10th mm
+      t_y+=(int32_t)t_ny*dd/(2*V_NORM); // in 10th mm
+    }
   }
 }
 
