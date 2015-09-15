@@ -51,6 +51,7 @@ const unsigned int PID_TIMEOUT = 200;
 const unsigned int RESP_TIMEOUT = 25; // C_T+R_T >= 75ms
 const unsigned int CMD_TIMEOUT = 600; 
 const unsigned int RATE_SAMPLE_PERIOD = 400;
+const unsigned int RATE_SAMPLE_TARGET = 10;
 const unsigned int WHEEL_CHGSTATES = 40;
 const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
 const unsigned int WHEEL_RAD_MM_10 = 350; 
@@ -131,7 +132,7 @@ int32_t x=0, y=0;// in 10thmm
 int16_t nx=0, ny=V_NORM;
 int32_t angle=0; 
 
-int16_t us_dist=9999; 
+uint16_t us_dist=9999; 
 volatile uint8_t v_enc_cnt[2]={0,0}; 
 volatile uint8_t v_es[2]={0,0};
 
@@ -156,7 +157,8 @@ uint8_t last_enc_cnt[2]={0,0};
 uint8_t last_enc_rate[2]={0,0}; 
 uint8_t calib_enc_rate=0; // target rate (counts per RATE_SAMPLE_PERIOD) for 100 power
 uint8_t calib_enc_rate_low=0; // target rate (counts per RATE_SAMPLE_PERIOD) for low power
-uint8_t pow_low;
+uint8_t pow_low=0;
+uint8_t pow_high=0;
 
 int8_t last_err[2]={0,0};
 int8_t int_err[2]={0,0};
@@ -213,31 +215,45 @@ void setup()
   // calibration sequence
   F_SETDRIVE();
   pow_low=M_POW_LOWEST;
-  ReadEnc();
-  last_enc_cnt[0]=last_enc_cnt[1]=0;
-  while(1) {
+  //last_enc_cnt[0]=last_enc_cnt[1]=0;
+  while(pow_low<M_POW_HIGH) {
+   ReadEnc(); 
    Drive(1, pow_low, 1, pow_low);
    delay(RATE_SAMPLE_PERIOD);
    ReadEnc();   
-   if(last_enc_cnt[0]>2 && last_enc_cnt[1]>2) break;
+   if(last_enc_cnt[0]>=2 && last_enc_cnt[1]>=2) break;
    pow_low+=M_POW_STEP;
   }
-  //pow_low-=M_POW_STEP; // still lower
   
-  ReadEnc();
-  delay(RATE_SAMPLE_PERIOD*2); // calibration
-  ReadEnc();
-  calib_enc_rate_low = (last_enc_cnt[0]+last_enc_cnt[1])/2/2;
+  //ReadEnc();
+  //delay(RATE_SAMPLE_PERIOD); // calibration
+  //ReadEnc();
+  calib_enc_rate_low = (last_enc_cnt[0]+last_enc_cnt[1])/2;
+ 
+  pow_high=pow_low+M_POW_STEP;
+  while(pow_high<M_POW_HIGH) {
+   ReadEnc();
+   Drive(1, pow_high, 1, pow_high);
+   delay(RATE_SAMPLE_PERIOD);
+   ReadEnc();   
+   if(last_enc_cnt[0]>=RATE_SAMPLE_TARGET && last_enc_cnt[1]>=RATE_SAMPLE_TARGET) break;
+   pow_high+=M_POW_STEP;
+  }
   
+  /*
   // to 100% power, warmup
+  Drive(1, M_POW_HIGH/2, 1, M_POW_HIGH/2);
+  delay(RATE_SAMPLE_PERIOD); 
   Drive(1, M_POW_HIGH, 1, M_POW_HIGH);
   delay(RATE_SAMPLE_PERIOD); 
   // now sample the normal power for twice the time
   //Drive(1, M_POW_HIGH, 1, M_POW_HIGH);
-  ReadEnc();
-  delay(RATE_SAMPLE_PERIOD*2); // calibration
-  ReadEnc();
-  calib_enc_rate = (last_enc_cnt[0]+last_enc_cnt[1])/2/2;
+  */
+  
+  //ReadEnc();
+  //delay(RATE_SAMPLE_PERIOD); // calibration
+  //ReadEnc();
+  calib_enc_rate = (last_enc_cnt[0]+last_enc_cnt[1])/2;
   StopDrive();
   
   digitalWrite(RED_LED, LOW);
@@ -334,9 +350,9 @@ void Notify() {
       break; 
     case EnumCmdTest:       
       addJson("PL", pow_low);
- //     addJson("PLr", pow_low_r); 
-      addJson("TB", calib_enc_rate); 
-      addJson("TBL", calib_enc_rate_low); 
+      addJson("PH", pow_high);
+      addJson("CRL", calib_enc_rate_low);       
+      addJson("CRH", calib_enc_rate); 
       addJson("TD", last_dur); 
       addJsonArr16_2("R", last_enc_rate[0], last_enc_rate[1]);
       addJsonArr16_2("EC", last_enc_cnt[0], last_enc_cnt[1]);
@@ -496,7 +512,8 @@ void ReadEnc()
   int16_t s[2];
   int16_t tx, ty;
   int16_t dd, df;
-  uint16_t tl;
+  //uint16_t tl;
+  int16_t tl;
 
   for(uint8_t i=0; i<2; i++) {
     last_enc_cnt[i]=v_enc_cnt[i];
@@ -529,9 +546,12 @@ void ReadEnc()
       tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
       tx=(int32_t)tx*V_NORM/tl;  
       ty=(int32_t)ty*V_NORM/tl;
-      t_ang += invsin(t_nx, t_ny, ty, -tx, V_NORM);
+      tl=invsin(t_nx, t_ny, ty, -tx, V_NORM);
+      //t_ang += invsin(t_nx, t_ny, ty, -tx, V_NORM);
+      t_ang += tl;
       if(F_ISTASKMOV()) t_adv=dd/100; // in cm     
-      else t_adv=(int32_t)invsin(t_nx, t_ny, ty, -tx, V_NORM)*180/V_NORM_PI; // not optimal
+      //else t_adv=(int32_t)invsin(t_nx, t_ny, ty, -tx, V_NORM)*180/V_NORM_PI; // not optimal
+      else t_adv=(int32_t)tl*180/V_NORM_PI; // not optimal
       t_nx=ty; t_ny=-tx;
       t_x+=(int32_t)t_nx*dd/(2*V_NORM); // in 10th mm
       t_y+=(int32_t)t_ny*dd/(2*V_NORM); // in 10th mm

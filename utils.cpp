@@ -18,7 +18,7 @@ uint16_t isqrt32(uint32_t n)
 int32_t isin32d(int32_t xd)  // xd: -180...180; D=100
 {
     const int32_t D = 100;
-    const int32_t PI_D = 314;
+//    const int32_t PI_D = 314;
     const int32_t PD = 23;
     int32_t xa = xd>0 ? xd : -xd; 
     int32_t yd = (4*D*xd-4*D*xd*xa/180)/180;    
