@@ -24,6 +24,7 @@ int32_t isin32d(int32_t xd);
 uint16_t isqrt32(uint32_t n);  
 //int32_t invsin(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm); 
 int16_t invsin(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm); 
+int16_t asin32d(int16_t x, uint16_t norm);
 void addJson(const char *name, int16_t value);
 void addJsonArr16_2(const char *name, int16_t v1, int16_t v2);
 
@@ -51,7 +52,8 @@ const unsigned int PID_TIMEOUT = 200;
 const unsigned int RESP_TIMEOUT = 25; // C_T+R_T >= 75ms
 const unsigned int CMD_TIMEOUT = 600; 
 const unsigned int RATE_SAMPLE_PERIOD = 400;
-const unsigned int RATE_SAMPLE_TARGET = 10;
+const unsigned int RATE_SAMPLE_TARGET_LOW = 3;
+const unsigned int RATE_SAMPLE_TARGET_HIGH = 12;
 const unsigned int WHEEL_CHGSTATES = 40;
 const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
 const unsigned int WHEEL_RAD_MM_10 = 350; 
@@ -63,7 +65,6 @@ const unsigned int M_COAST_TIME=400;
 const unsigned int M_WUP_PID_CNT=1;
 
 const unsigned int TASK_TIMEOUT = 10000; 
-//const unsigned int TASK_PID_C = 1; // track tast every ... PID cycle
 
 const unsigned int R_F_ISDRIVE=0x01;
 const unsigned int R_F_ISOVERFLOW=0x02;
@@ -98,9 +99,9 @@ const unsigned int R_F_ISTASKROT=0x16;
 */
 
 // for 7.5v
-#define M_POW_LOWEST   10
+#define M_POW_LOWEST_LIM   10
 //#define M_POW_LOW   30
-#define M_POW_HIGH 100
+#define M_POW_HIGH_LIM 100
 #define M_POW_MAX  120
 #define M_POW_STEP 2
 
@@ -117,8 +118,6 @@ uint32_t lastCommandTime; // =lastTaskTime
 uint32_t lastPidTime;
 uint16_t last_dur=0;
 //uint16_t us_meas_dur=0;
-
-//uint8_t task_pid_cnt=0;
 
 uint8_t cmd_id=0;
 
@@ -140,12 +139,11 @@ enum EnumCmd { EnumCmdDrive=1, EnumCmdTest=2, EnumCmdStop=3, EnumCmdLog=4, EnumC
 enum EnumError { EnumErrorUnknown=-1, EnumErrorBadSyntax=-2, EnumErrorBadParam=-3, EnumErrorNone=-100};  
 
 int32_t task_target=0;   // in mm or degrees
-//int16_t task_progress=0; // in cm
 
 int16_t t_nx, t_ny;
 int16_t t_x, t_y; //in 10thmm - up to 320 cm
 int16_t t_ang;
-int8_t  t_adv;
+int16_t  t_adv;
 
 int8_t cmdResult=EnumErrorNone;
 uint8_t drv_dir[2]={0,0}; 
@@ -155,7 +153,7 @@ uint8_t trg_rate[2]={0,0};
 
 uint8_t last_enc_cnt[2]={0,0}; 
 uint8_t last_enc_rate[2]={0,0}; 
-uint8_t calib_enc_rate=0; // target rate (counts per RATE_SAMPLE_PERIOD) for 100 power
+uint8_t calib_enc_rate_high=0; // target rate (counts per RATE_SAMPLE_PERIOD) for 100 power
 uint8_t calib_enc_rate_low=0; // target rate (counts per RATE_SAMPLE_PERIOD) for low power
 uint8_t pow_low=0;
 uint8_t pow_high=0;
@@ -214,14 +212,13 @@ void setup()
    
   // calibration sequence
   F_SETDRIVE();
-  pow_low=M_POW_LOWEST;
-  //last_enc_cnt[0]=last_enc_cnt[1]=0;
-  while(pow_low<M_POW_HIGH) {
+  pow_low=M_POW_LOWEST_LIM;
+  while(pow_low<M_POW_HIGH_LIM) {
    ReadEnc(); 
    Drive(1, pow_low, 1, pow_low);
    delay(RATE_SAMPLE_PERIOD);
    ReadEnc();   
-   if(last_enc_cnt[0]>=2 && last_enc_cnt[1]>=2) break;
+   if(last_enc_cnt[0]>=RATE_SAMPLE_TARGET_LOW && last_enc_cnt[1]>=RATE_SAMPLE_TARGET_LOW) break;
    pow_low+=M_POW_STEP;
   }
   
@@ -231,29 +228,19 @@ void setup()
   calib_enc_rate_low = (last_enc_cnt[0]+last_enc_cnt[1])/2;
  
   pow_high=pow_low+M_POW_STEP;
-  while(pow_high<M_POW_HIGH) {
+  while(pow_high<M_POW_HIGH_LIM) {
    ReadEnc();
    Drive(1, pow_high, 1, pow_high);
    delay(RATE_SAMPLE_PERIOD);
    ReadEnc();   
-   if(last_enc_cnt[0]>=RATE_SAMPLE_TARGET && last_enc_cnt[1]>=RATE_SAMPLE_TARGET) break;
+   if(last_enc_cnt[0]>=RATE_SAMPLE_TARGET_HIGH && last_enc_cnt[1]>=RATE_SAMPLE_TARGET_HIGH) break;
    pow_high+=M_POW_STEP;
   }
-  
-  /*
-  // to 100% power, warmup
-  Drive(1, M_POW_HIGH/2, 1, M_POW_HIGH/2);
-  delay(RATE_SAMPLE_PERIOD); 
-  Drive(1, M_POW_HIGH, 1, M_POW_HIGH);
-  delay(RATE_SAMPLE_PERIOD); 
-  // now sample the normal power for twice the time
-  //Drive(1, M_POW_HIGH, 1, M_POW_HIGH);
-  */
   
   //ReadEnc();
   //delay(RATE_SAMPLE_PERIOD); // calibration
   //ReadEnc();
-  calib_enc_rate = (last_enc_cnt[0]+last_enc_cnt[1])/2;
+  calib_enc_rate_high = (last_enc_cnt[0]+last_enc_cnt[1])/2;
   StopDrive();
   
   digitalWrite(RED_LED, LOW);
@@ -276,10 +263,7 @@ void loop()
     if (F_ISDRIVE()) {
       PID(ctime); 
       if(F_ISTASKANY()) { 
-        //if((++task_pid_cnt)%TASK_PID_C==0) { // task tracking cycle
-        //  task_pid_cnt=0;
           if(TrackTask() || CheckCommandTimeout(TASK_TIMEOUT)) StopTask();
-        //}
       } else if(CheckCommandTimeout(CMD_TIMEOUT)) StopDrive();
     }
     readUSDist(); 
@@ -352,7 +336,7 @@ void Notify() {
       addJson("PL", pow_low);
       addJson("PH", pow_high);
       addJson("CRL", calib_enc_rate_low);       
-      addJson("CRH", calib_enc_rate); 
+      addJson("CRH", calib_enc_rate_high); 
       addJson("TD", last_dur); 
       addJsonArr16_2("R", last_enc_rate[0], last_enc_rate[1]);
       addJsonArr16_2("EC", last_enc_cnt[0], last_enc_cnt[1]);
@@ -435,8 +419,10 @@ void StartDrive()
 {
   for(int i=0; i<2; i++) {
     if(drv_dir[i]) {
-       trg_rate[i]=map(cmd_power[i], 0, 100, 0, calib_enc_rate);
-       cur_power[i]=map(cmd_power[i], 0, 100, 0, M_POW_HIGH);        
+       //trg_rate[i]=map(cmd_power[i], 0, 100, 0, calib_enc_rate);
+       //cur_power[i]=map(cmd_power[i], 0, 100, 0, M_POW_HIGH);   
+       cur_power[i]=map(cmd_power[i], 0, 100, pow_low, pow_high);        
+       trg_rate[i]=map(cur_power[i], pow_low, pow_high, calib_enc_rate_low, calib_enc_rate_high);
      } else {
        trg_rate[i]=0;
        cur_power[i]=0;
@@ -472,7 +458,7 @@ void StartTask()
 {
 //  task_progress=0;
   t_nx=0; t_ny=V_NORM;
-  t_x=t_y=0; t_ang=0;
+  t_x=t_y=0; t_ang=0; t_adv=0;
   cmd_power[0]=cmd_power[1]=pow_low;  
   if(F_ISTASKMOV()) { 
     drv_dir[0]=drv_dir[1]=1;
@@ -495,14 +481,14 @@ void StopTask()
 boolean TrackTask() 
 {
   //if(F_ISTASKMOV()) return task_progress>=task_target;
-  if(F_ISTASKMOV()) return t_y/10>=task_target;
+  if(F_ISTASKMOV()) return t_y/10+t_adv>=task_target;
   else {
     // test. use global angle. So do this only after Reset !!!
     if(task_target>0) { //clockwise
-      return t_ang>=task_target;
+      return t_ang+t_adv>=task_target;
     }
     else { //counterclockwise
-      return t_ang<=task_target;
+      return t_ang+t_adv<=task_target;
     }
   }
 }
@@ -546,12 +532,11 @@ void ReadEnc()
       tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
       tx=(int32_t)tx*V_NORM/tl;  
       ty=(int32_t)ty*V_NORM/tl;
-      tl=invsin(t_nx, t_ny, ty, -tx, V_NORM);
-      //t_ang += invsin(t_nx, t_ny, ty, -tx, V_NORM);
+      tl=invsin(t_nx, t_ny, ty, -tx, V_NORM); //vector product = sin
+      tl=asin32d(tl, V_NORM); //asin
       t_ang += tl;
-      if(F_ISTASKMOV()) t_adv=dd/100; // in cm     
-      //else t_adv=(int32_t)invsin(t_nx, t_ny, ty, -tx, V_NORM)*180/V_NORM_PI; // not optimal
-      else t_adv=(int32_t)tl*180/V_NORM_PI; // not optimal
+      if(F_ISTASKMOV()) t_adv=dd/10; // in mm     
+      else t_adv=(int32_t)tl*180/V_NORM_PI; 
       t_nx=ty; t_ny=-tx;
       t_x+=(int32_t)t_nx*dd/(2*V_NORM); // in 10th mm
       t_y+=(int32_t)t_ny*dd/(2*V_NORM); // in 10th mm
@@ -562,19 +547,21 @@ void ReadEnc()
 void PID(uint16_t ctime)
 {
   if(ctime>0) {
+    int16_t task_progress;
+    uint8_t task_incr;    
     uint8_t t_rate[2];
     uint8_t i;
-    int16_t t_p;
     t_rate[0]=trg_rate[0]; t_rate[1]=trg_rate[1];
     
-    if(F_ISTASKANY()) {
+    if(F_ISTASKANY()) {      
       if(F_ISTASKMOV()) {
-        t_p=t_y/10;
-        logr[pid_log_ptr].pid_t_err=t_x/100;  // cm
+        task_incr=calib_enc_rate_high-calib_enc_rate_low;
+        task_progress=t_y/10; // mm
+        logr[pid_log_ptr].pid_t_err=t_x/10;  // mm
         for(i=0; i<2; i++) {
-          if(t_p<task_target/2) t_rate[i] = t_rate[i] + (uint32_t)t_rate[i]*t_p*2/task_target; //*1..2
+          if(task_progress<task_target/2) t_rate[i] = t_rate[i] + (uint32_t)task_incr*task_progress*2/task_target; //0..1
           else {
-            t_rate[i] = 3*t_rate[i] - (uint32_t)t_rate[i]*t_p*2/task_target; //*2..1
+            t_rate[i] = t_rate[i] - (uint32_t)task_incr*2*(task_target-task_progress)/task_target; //1..0
           }
         }
       } else { // rotate
