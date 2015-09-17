@@ -53,7 +53,7 @@ const unsigned int RESP_TIMEOUT = 25; // C_T+R_T >= 75ms
 const unsigned int CMD_TIMEOUT = 600; 
 const unsigned int RATE_SAMPLE_PERIOD = 400;
 const unsigned int RATE_SAMPLE_TARGET_LOW = 3;
-const unsigned int RATE_SAMPLE_TARGET_HIGH = 12;
+const unsigned int RATE_SAMPLE_TARGET_HIGH = 16;
 const unsigned int WHEEL_CHGSTATES = 40;
 const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
 const unsigned int WHEEL_RAD_MM_10 = 350; 
@@ -178,7 +178,8 @@ struct __attribute__((__packed__)) LogRec {
   //int8_t pid_log_ierr[2];
   uint8_t pid_log_pow[2];
   int8_t pid_t_err;
-  int16_t ang;
+  int8_t t_adv;
+  int16_t t_ang;
 } logr[PID_LOG_SZ];
 
 
@@ -371,7 +372,9 @@ void Notify() {
         Serial.print("("); Serial.print(logr[i].pid_log_derr[0]);Serial.print(","); Serial.print(logr[i].pid_log_derr[1]); Serial.print(")"); 
         Serial.print("("); Serial.print(logr[i].pid_log_pow[0]);Serial.print(","); Serial.print(logr[i].pid_log_pow[1]); Serial.print("),"); 
         Serial.print(logr[i].pid_t_err); Serial.print(","); 
-        Serial.print(logr[i].ang); Serial.print(";"); 
+        Serial.print(logr[i].t_ang); Serial.print(","); 
+        Serial.print(logr[i].t_adv); 
+        Serial.print(";"); 
         logr[i].pid_log_idx=255; // mark as empty      
         delay(10);
         }
@@ -421,7 +424,8 @@ void StartDrive()
     if(drv_dir[i]) {
        //trg_rate[i]=map(cmd_power[i], 0, 100, 0, calib_enc_rate);
        //cur_power[i]=map(cmd_power[i], 0, 100, 0, M_POW_HIGH);   
-       cur_power[i]=map(cmd_power[i], 0, 100, pow_low, pow_high);        
+       //cur_power[i]=map(cmd_power[i], 0, 100, pow_low, pow_high);        
+       cur_power[i]=cmd_power[i];
        trg_rate[i]=map(cur_power[i], pow_low, pow_high, calib_enc_rate_low, calib_enc_rate_high);
      } else {
        trg_rate[i]=0;
@@ -520,7 +524,8 @@ void ReadEnc()
     tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
     tx=(int32_t)tx*V_NORM/tl;  
     ty=(int32_t)ty*V_NORM/tl;
-    angle += invsin(nx, ny, ty, -tx, V_NORM);
+    //angle += invsin(nx, ny, ty, -tx, V_NORM);
+    angle += asin32d(invsin(nx, ny, ty, -tx, V_NORM), V_NORM);
     nx=ty; ny=-tx;
     x+=(int32_t)nx*dd/(2*V_NORM); // in 10th mm
     y+=(int32_t)ny*dd/(2*V_NORM); // in 10th mm
@@ -561,7 +566,7 @@ void PID(uint16_t ctime)
         for(i=0; i<2; i++) {
           if(task_progress<task_target/2) t_rate[i] = t_rate[i] + (uint32_t)task_incr*task_progress*2/task_target; //0..1
           else {
-            t_rate[i] = t_rate[i] - (uint32_t)task_incr*2*(task_target-task_progress)/task_target; //1..0
+            t_rate[i] = t_rate[i] + (uint32_t)task_incr*2*(task_target-task_progress)/task_target; //1..0
           }
         }
       } else { // rotate
@@ -595,7 +600,9 @@ void PID(uint16_t ctime)
       //logr[pid_log_ptr].pid_log_pow[i]=pow;      
       logr[pid_log_ptr].pid_log_pow[i]=cur_power[i];      
     } 
-  logr[pid_log_ptr].ang=angle*180/V_NORM_PI;  
+  //logr[pid_log_ptr].ang=angle*180/V_NORM_PI;  
+  logr[pid_log_ptr].t_ang=t_ang*180/V_NORM_PI;  
+  logr[pid_log_ptr].t_adv=t_adv;
   logr[pid_log_ptr].cmd_id=cmd_id;
   logr[pid_log_ptr].ctime=ctime;
   logr[pid_log_ptr].pid_log_idx=pid_cnt++;   
@@ -666,8 +673,9 @@ int8_t Parse()
       if(m<-255 || m>254) return EnumErrorBadParam;
       if(buf[pos] != (i==0 ? ',' : 0)) return EnumErrorBadSyntax;
       if(m==0)       { if(cmd_power[i]) { cmd_power[i]=0; chg=true;}} 
-      else if (m>0)  { if(m<pow_low) m=pow_low; if(drv_dir[i]!=1 || cmd_power[i]!=m) { cmd_power[i]=m; drv_dir[i]=1; chg=true;} } 
-      else           { if((-m)<pow_low) m=-pow_low; if(drv_dir[i]!=2 || cmd_power[i]!=-m) {cmd_power[i]=-m; drv_dir[i]=2; chg=true;} }  
+      else if (m>0)  { if(m<pow_low) m=pow_low; if(m>M_POW_HIGH_LIM) m=M_POW_HIGH_LIM; if(drv_dir[i]!=1 || cmd_power[i]!=m) { cmd_power[i]=m; drv_dir[i]=1; chg=true;} } 
+      //else           { if((-m)<pow_low) m=-pow_low; if(drv_dir[i]!=2 || cmd_power[i]!=-m) {cmd_power[i]=-m; drv_dir[i]=2; chg=true;} }  
+      else           { m=-m; if(m<pow_low) m=pow_low; if(m>M_POW_HIGH_LIM) m=M_POW_HIGH_LIM; if(drv_dir[i]!=2 || cmd_power[i]!=m) {cmd_power[i]=m; drv_dir[i]=2; chg=true;} }  
     }
     if(!cmd_power[0] && !cmd_power[1]) return EnumCmdStop;
     return chg ? EnumCmdDrive : EnumCmdContinueDrive;
