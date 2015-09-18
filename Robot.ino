@@ -53,7 +53,7 @@ const unsigned int RESP_TIMEOUT = 25; // C_T+R_T >= 75ms
 const unsigned int CMD_TIMEOUT = 600; 
 const unsigned int RATE_SAMPLE_PERIOD = 400;
 const unsigned int RATE_SAMPLE_TARGET_LOW = 3;
-const unsigned int RATE_SAMPLE_TARGET_HIGH = 16;
+const unsigned int RATE_SAMPLE_TARGET_HIGH = 18;
 const unsigned int WHEEL_CHGSTATES = 40;
 const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
 const unsigned int WHEEL_RAD_MM_10 = 350; 
@@ -86,6 +86,9 @@ const unsigned int R_F_ISTASKROT=0x16;
 #define F_CLEARTASK() (flags&=~(R_F_ISTASK|R_F_ISTASKMOV|R_F_ISTASKROT))
 
 #define CHGST_TO_MM_10(CNT)  ((int32_t)(CNT)*62832*WHEEL_RAD_MM_10/WHEEL_CHGSTATES/10000)
+
+#define RADN_TO_GRAD(R)      ((int32_t)(R)*180/V_NORM_PI)
+#define GRAD_TO_RADN(D)      ((int32_t)(D)*V_NORM_PI/180)
 
 // for 5v
 /*
@@ -135,7 +138,7 @@ uint16_t us_dist=9999;
 volatile uint8_t v_enc_cnt[2]={0,0}; 
 volatile uint8_t v_es[2]={0,0};
 
-enum EnumCmd { EnumCmdDrive=1, EnumCmdTest=2, EnumCmdStop=3, EnumCmdLog=4, EnumCmdContinueDrive=5, EnumCmdRst=6, EnumCmdTaskMove=7, EnumCmdTaskRotate=8};  
+enum EnumCmd { EnumCmdDrive=1, EnumCmdTest=2, EnumCmdStop=3, EnumCmdLog=4, EnumCmdContinueDrive=5, EnumCmdRst=6, EnumCmdTaskMove=7, EnumCmdTaskRotate=8, EnumCmdWallLog=9};  
 enum EnumError { EnumErrorUnknown=-1, EnumErrorBadSyntax=-2, EnumErrorBadParam=-3, EnumErrorNone=-100};  
 
 int32_t task_target=0;   // in mm or degrees
@@ -182,6 +185,13 @@ struct __attribute__((__packed__)) LogRec {
   int16_t t_ang;
 } logr[PID_LOG_SZ];
 
+#define WALL_LOG_SZ 8
+//uint8_t wl_ptr=0;
+struct __attribute__((__packed__)) WallRec {
+  //uint8_t idx;
+  int8_t adv; //cm
+  int8_t usd; //cm
+} logw[WALL_LOG_SZ];
 
 void setup()
 { 
@@ -246,7 +256,9 @@ void setup()
   
   digitalWrite(RED_LED, LOW);
 
-  for(uint8_t i=0; i<PID_LOG_SZ; i++) logr[i].pid_log_idx=255;
+  for(i=0; i<PID_LOG_SZ; i++) logr[i].pid_log_idx=255;
+  
+  for(i=0; i<WALL_LOG_SZ; i++) logw[i].adv=logw[i].usd=0;
 
   while (Serial.available()) Serial.read();  // eat garbage
   
@@ -353,8 +365,8 @@ void Notify() {
       addJsonArr16_2("TN", (int16_t)t_nx, (int16_t)t_ny); // in normval
       addJsonArr16_2("TX", (int16_t)(t_x/100), (int16_t)(t_y/100)); // in cm 
       //addJson("NSIN", invsin(0, V_NORM, nx, ny, V_NORM)/100);
-      addJson("ANG", (int32_t)t_ang*180/V_NORM_PI);
-      addJson("TADV", t_adv); 
+      addJson("ANG", RADN_TO_GRAD(t_ang));
+      addJson("TADV", RADN_TO_GRAD(t_adv)); 
       addJson("L", last_dur); 
       break;
     case EnumCmdLog: {
@@ -378,13 +390,22 @@ void Notify() {
         logr[i].pid_log_idx=255; // mark as empty      
         delay(10);
         }
-      }
-      
+      }      
       Serial.print("\",");
       pid_cnt=0;
       pid_log_ptr=0;
       break;
     }
+    case EnumCmdWallLog: {
+      Serial.print("\""); Serial.print("\"LOGR\":\""); 
+      for(uint8_t i=WALL_LOG_SZ-1; i>=0; i--) {
+        Serial.print(logw[i].adv);Serial.print(","); Serial.print(logw[i].usd);Serial.print(";"); 
+        delay(10);
+      }
+      Serial.print("\",");
+      break;
+    }
+
     case EnumCmdTaskMove:       
     case EnumCmdTaskRotate:           
       addJson("FT", flags&R_F_ISTASK);
@@ -406,6 +427,7 @@ boolean CheckCommandTimeout(uint16_t t)
 }
 
 void readUSDist() {
+  int16_t usd_prev = us_dist;
   digitalWrite(US_OUT, LOW);
   delayMicroseconds(2);
   digitalWrite(US_OUT, HIGH);
@@ -416,6 +438,11 @@ void readUSDist() {
   if(!d) return;
   //us_meas_dur = millis()-ms;
   us_dist=(int16_t)(d/58);  
+  if(F_ISDRIVE()) {
+      for(uint8_t i=WALL_LOG_SZ-1; i>=1; i--) logw[i]=logw[i-1];
+      logw[0].adv=t_adv/10; //cm
+      logw[0].usd=us_dist-usd_prev;
+  }
 }
 
 void StartDrive() 
@@ -426,6 +453,7 @@ void StartDrive()
        //cur_power[i]=map(cmd_power[i], 0, 100, 0, M_POW_HIGH);   
        //cur_power[i]=map(cmd_power[i], 0, 100, pow_low, pow_high);        
        cur_power[i]=cmd_power[i];
+       if(cur_power[i]>pow_high) cur_power[i]=pow_high;
        trg_rate[i]=map(cur_power[i], pow_low, pow_high, calib_enc_rate_low, calib_enc_rate_high);
      } else {
        trg_rate[i]=0;
@@ -463,10 +491,12 @@ void StartTask()
 //  task_progress=0;
   t_nx=0; t_ny=V_NORM;
   t_x=t_y=0; t_ang=0; t_adv=0;
-  cmd_power[0]=cmd_power[1]=pow_low;  
+  
   if(F_ISTASKMOV()) { 
+    cmd_power[0]=cmd_power[1]=(pow_low+pow_high)/2;  
     drv_dir[0]=drv_dir[1]=1;
   } else { // rot
+    cmd_power[0]=cmd_power[1]=pow_low;  
     if(task_target>0) { // clockwise
       drv_dir[0]=1; drv_dir[1]=2; 
     } else { //counterclockwise
@@ -524,7 +554,6 @@ void ReadEnc()
     tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
     tx=(int32_t)tx*V_NORM/tl;  
     ty=(int32_t)ty*V_NORM/tl;
-    //angle += invsin(nx, ny, ty, -tx, V_NORM);
     angle += asin32d(invsin(nx, ny, ty, -tx, V_NORM), V_NORM);
     nx=ty; ny=-tx;
     x+=(int32_t)nx*dd/(2*V_NORM); // in 10th mm
@@ -540,8 +569,13 @@ void ReadEnc()
       tl=invsin(t_nx, t_ny, ty, -tx, V_NORM); //vector product = sin
       tl=asin32d(tl, V_NORM); //asin
       t_ang += tl;
-      if(F_ISTASKMOV()) t_adv=dd/10; // in mm     
-      else t_adv=(int32_t)tl*180/V_NORM_PI; 
+      /*
+      if(F_ISTASKMOV()) t_adv=dd/2/10; // in mm     
+      //else t_adv=(int32_t)tl*180/V_NORM_PI; 
+      else t_adv=tl; 
+      */
+      if(F_ISTASKROT()) t_adv=tl; // in radn
+      else t_adv=dd/2/10; // in mm     
       t_nx=ty; t_ny=-tx;
       t_x+=(int32_t)t_nx*dd/(2*V_NORM); // in 10th mm
       t_y+=(int32_t)t_ny*dd/(2*V_NORM); // in 10th mm
@@ -560,6 +594,7 @@ void PID(uint16_t ctime)
     
     if(F_ISTASKANY()) {      
       if(F_ISTASKMOV()) {
+        /*
         task_incr=calib_enc_rate_high-calib_enc_rate_low;
         task_progress=t_y/10; // mm
         logr[pid_log_ptr].pid_t_err=t_x/10;  // mm
@@ -568,7 +603,7 @@ void PID(uint16_t ctime)
           else {
             t_rate[i] = t_rate[i] + (uint32_t)task_incr*2*(task_target-task_progress)/task_target; //1..0
           }
-        }
+        } */
       } else { // rotate
       }     
     }
@@ -600,9 +635,8 @@ void PID(uint16_t ctime)
       //logr[pid_log_ptr].pid_log_pow[i]=pow;      
       logr[pid_log_ptr].pid_log_pow[i]=cur_power[i];      
     } 
-  //logr[pid_log_ptr].ang=angle*180/V_NORM_PI;  
-  logr[pid_log_ptr].t_ang=t_ang*180/V_NORM_PI;  
-  logr[pid_log_ptr].t_adv=t_adv;
+  logr[pid_log_ptr].t_ang=RADN_TO_GRAD(t_ang);  
+  logr[pid_log_ptr].t_adv=RADN_TO_GRAD(t_adv); 
   logr[pid_log_ptr].cmd_id=cmd_id;
   logr[pid_log_ptr].ctime=ctime;
   logr[pid_log_ptr].pid_log_idx=pid_cnt++;   
@@ -682,6 +716,9 @@ int8_t Parse()
   } 
   else if((pos=Match("L"))) {
     return EnumCmdLog;
+  }
+  else if((pos=Match("W"))) {
+    return EnumCmdWallLog;
   } 
   else if((pos=Match("R"))) {
     return EnumCmdRst;
@@ -699,8 +736,7 @@ int8_t Parse()
     pos++;
     pos = bctoi(pos, &m);      
     if(!m) return EnumErrorBadParam;
-    //task_target=m; // deg    
-    task_target=(int32_t)m*V_NORM_PI/180;    
+    task_target=GRAD_TO_RADN(m);  // rad norm  
     F_SETTASKROT();
     return EnumCmdTaskRotate;
   }
