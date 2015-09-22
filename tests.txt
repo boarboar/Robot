@@ -1,0 +1,10 @@
+cat /dev/ttyATH0 | tee /tmp/ttycpy.log
+cat /dev/ttyATH0 | tee /tmp/ttycpy.log | grep LOGR > /tmp/log.log
+tail -f -1 /tmp/ttycpy.log
+tail -f -1 /tmp/log.log
+tail -f -1 /dev/ttyATH0 | tee /tmp/ttycpy.log
+
+
+mkfifo pipe
+ls -l > pipe
+cat < pipe

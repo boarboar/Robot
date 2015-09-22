@@ -87,6 +87,10 @@ const unsigned int R_F_ISTASKROT=0x16;
 
 #define CHGST_TO_MM_10(CNT)  ((int32_t)(CNT)*62832*WHEEL_RAD_MM_10/WHEEL_CHGSTATES/10000)
 
+// tracking
+#define V_NORM 10000
+#define V_NORM_PI 31400
+
 #define RADN_TO_GRAD(R)      ((int32_t)(R)*180/V_NORM_PI)
 #define GRAD_TO_RADN(D)      ((int32_t)(D)*V_NORM_PI/180)
 
@@ -123,10 +127,6 @@ uint16_t last_dur=0;
 //uint16_t us_meas_dur=0;
 
 uint8_t cmd_id=0;
-
-// tracking
-#define V_NORM 10000
-#define V_NORM_PI 31400
 
 int32_t dist=0;  // in 10thmm
 int16_t diff=0;  // in 10tmm
@@ -273,7 +273,7 @@ void setup()
 void loop()
 {  
   uint32_t cycleTime = millis();
-  if (F_ISDRIVE() && (/*CheckCommandTimeout() ||*/ (us_dist<US_WALL_DIST && drv_dir[0]+drv_dir[1]==2))) StopDrive(); 
+  if (F_ISDRIVE() && (us_dist<US_WALL_DIST && drv_dir[0]+drv_dir[1]==2)) StopDrive(); 
   if ( cycleTime < lastPidTime) lastPidTime=0; // wraparound, not correct   
   uint16_t ctime = cycleTime - lastPidTime;
   if ( ctime >= PID_TIMEOUT) { // PID cycle    
@@ -365,42 +365,16 @@ void Notify() {
       addJson("FR", flags&R_F_ISTASKROT);
       addJson("TG", task_target);
       delay(10);
-//      addJson("TP", task_progress);
       addJsonArr16_2("TN", (int16_t)t_nx, (int16_t)t_ny); // in normval
       addJsonArr16_2("TX", (int16_t)(t_x/100), (int16_t)(t_y/100)); // in cm
       addJsonArr16_2("TD", (int16_t)(t_dist/100), (int16_t)(t_adv_d/100)); // in cm 
       addJsonArr16_2("TA", RADN_TO_GRAD(t_ang), RADN_TO_GRAD(t_adv_a)); // in deg
-      /*
-      addJson("TANG", RADN_TO_GRAD(t_ang));
-      addJson("TADVA", RADN_TO_GRAD(t_adv_a));
-      addJson("TDST", t_dist/100);
-      addJson("TADVD", t_adv_d/100);
-      */
       addJson("L", last_dur); 
       break;
     case EnumCmdLog: {
-      uint8_t i;
       addJson("LCNT", pid_cnt);
-      //Serial.print("\""); Serial.print("LOGR"); Serial.print("\":\"");
       Serial.print("\"LOGR\":\"");             
-      for(i=0; i<PID_LOG_SZ; i++) {
-        if(logr[i].pid_log_idx!=255) { // if not empty
-        Serial.print(logr[i].pid_log_idx);Serial.print(":"); Serial.print(logr[i].cmd_id);Serial.print(":"); Serial.print(logr[i].ctime); Serial.print(":"); 
-        Serial.print("("); Serial.print(logr[i].ec[0]);Serial.print(","); Serial.print(logr[i].ec[1]); Serial.print(")"); 
-        Serial.print("("); Serial.print(logr[i].pid_t_rate[0]);Serial.print(","); Serial.print(logr[i].pid_t_rate[1]); Serial.print(")"); 
-        Serial.print("("); Serial.print(logr[i].pid_log_rate[0]);Serial.print(","); Serial.print(logr[i].pid_log_rate[1]); Serial.print(")"); 
-        Serial.print("("); Serial.print(trg_rate[0]-logr[i].pid_log_rate[0]);Serial.print(","); Serial.print(trg_rate[1]-logr[i].pid_log_rate[1]); Serial.print(")"); 
-//        Serial.print("("); Serial.print(logr[i].pid_log_ierr[0]);Serial.print(","); Serial.print(logr[i].pid_log_ierr[1]); Serial.print(")"); 
-        Serial.print("("); Serial.print(logr[i].pid_log_derr[0]);Serial.print(","); Serial.print(logr[i].pid_log_derr[1]); Serial.print(")"); 
-        Serial.print("("); Serial.print(logr[i].pid_log_pow[0]);Serial.print(","); Serial.print(logr[i].pid_log_pow[1]); Serial.print("),"); 
-        //Serial.print(logr[i].pid_t_err); Serial.print(",");
-        Serial.print("("); Serial.print(logr[i].t_dist); Serial.print(","); Serial.print(logr[i].t_adv_d); Serial.print("),"); 
-        Serial.print("("); Serial.print(logr[i].t_ang); Serial.print(","); Serial.print(logr[i].t_adv_a); Serial.print("),");
-        Serial.print(";"); 
-        logr[i].pid_log_idx=255; // mark as empty      
-        delay(10);
-        }
-      }      
+      PrintLogRecs();
       Serial.print("\",");
       pid_cnt=0;
       pid_log_ptr=0;
@@ -421,7 +395,6 @@ void Notify() {
       addJson("FT", flags&R_F_ISTASK);
       addJson("FM", flags&R_F_ISTASKMOV);
       addJson("TG", task_target);
-//      addJson("TP", task_progress); 
       break;
     default:;
    }
@@ -459,9 +432,6 @@ void StartDrive()
 {
   for(int i=0; i<2; i++) {
     if(drv_dir[i]) {
-       //trg_rate[i]=map(cmd_power[i], 0, 100, 0, calib_enc_rate);
-       //cur_power[i]=map(cmd_power[i], 0, 100, 0, M_POW_HIGH);   
-       //cur_power[i]=map(cmd_power[i], 0, 100, pow_low, pow_high);        
        cur_power[i]=cmd_power[i];
        if(cur_power[i]>pow_high) cur_power[i]=pow_high;
        trg_rate[i]=map(cur_power[i], pow_low, pow_high, calib_enc_rate_low, calib_enc_rate_high);
@@ -498,7 +468,6 @@ void StopDrive()
 
 void StartTask() 
 {
-//  task_progress=0;
   t_nx=0; t_ny=V_NORM;
   t_x=t_y=0; t_ang=t_dist=t_adv_d=t_adv_a=0;
   
@@ -542,7 +511,6 @@ void ReadEnc()
   int16_t s[2];
   int16_t tx, ty;
   int16_t dd, df;
-  //uint16_t tl;
   int16_t tl;
 
   for(uint8_t i=0; i<2; i++) {
@@ -569,31 +537,29 @@ void ReadEnc()
     x+=(int32_t)nx*dd/(2*V_NORM); // in 10th mm
     y+=(int32_t)ny*dd/(2*V_NORM); // in 10th mm
     // task vars
-    //if(F_ISTASKANY()) {     
-      tx=-t_ny; ty=t_nx;     
-      tx += (int32_t)t_nx*df/WHEEL_BASE_MM_10;
-      ty += (int32_t)t_ny*df/WHEEL_BASE_MM_10;
-      tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
-      tx=(int32_t)tx*V_NORM/tl;  
-      ty=(int32_t)ty*V_NORM/tl;
-      tl=invsin(t_nx, t_ny, ty, -tx, V_NORM); //vector product = sin
-      tl=asin32d(tl, V_NORM); //asin
-      t_ang += tl;
-      t_dist += dd/2; // in 10th mm
-      t_adv_a = tl;
-      t_adv_d = dd/2; // in 10th mm
-      t_nx=ty; t_ny=-tx;
-      t_x+=(int32_t)t_nx*dd/(2*V_NORM); // in 10th mm
-      t_y+=(int32_t)t_ny*dd/(2*V_NORM); // in 10th mm
-    //}
+    tx=-t_ny; ty=t_nx;     
+    tx += (int32_t)t_nx*df/WHEEL_BASE_MM_10;
+    ty += (int32_t)t_ny*df/WHEEL_BASE_MM_10;
+    tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
+    tx=(int32_t)tx*V_NORM/tl;  
+    ty=(int32_t)ty*V_NORM/tl;
+    tl=invsin(t_nx, t_ny, ty, -tx, V_NORM); //vector product = sin
+    tl=asin32d(tl, V_NORM); //asin
+    t_ang += tl;
+    t_dist += dd/2; // in 10th mm
+    t_adv_a = tl;
+    t_adv_d = dd/2; // in 10th mm
+    t_nx=ty; t_ny=-tx;
+    t_x+=(int32_t)t_nx*dd/(2*V_NORM); // in 10th mm
+    t_y+=(int32_t)t_ny*dd/(2*V_NORM); // in 10th mm
   }
 }
 
 void PID(uint16_t ctime)
 {
   if(ctime>0) {
-    int16_t task_progress;
-    uint8_t task_incr;    
+    //int16_t task_progress;
+    //uint8_t task_incr;    
     uint8_t t_rate[2];
     uint8_t i;
     t_rate[0]=trg_rate[0]; t_rate[1]=trg_rate[1];
@@ -675,6 +641,39 @@ void Drive_s(uint8_t dir, uint8_t pow, int16_t p_en, uint8_t p1, uint8_t p2)
   analogWrite(p_en, pow);
 }
 
+void PrintLogRecs() {
+    uint8_t i;
+    for(i=0; i<PID_LOG_SZ; i++) {
+      if(logr[i].pid_log_idx!=255) { // if not empty
+        Serial.print(logr[i].pid_log_idx);Serial.print(":"); Serial.print(logr[i].cmd_id);Serial.print(":"); Serial.print(logr[i].ctime); Serial.print(":"); 
+        /*
+        Serial.print("("); Serial.print(logr[i].ec[0]);Serial.print(","); Serial.print(logr[i].ec[1]); Serial.print(")"); 
+        Serial.print("("); Serial.print(logr[i].pid_t_rate[0]);Serial.print(","); Serial.print(logr[i].pid_t_rate[1]); Serial.print(")"); 
+        Serial.print("("); Serial.print(logr[i].pid_log_rate[0]);Serial.print(","); Serial.print(logr[i].pid_log_rate[1]); Serial.print(")"); 
+        Serial.print("("); Serial.print(trg_rate[0]-logr[i].pid_log_rate[0]);Serial.print(","); Serial.print(trg_rate[1]-logr[i].pid_log_rate[1]); Serial.print(")"); 
+        Serial.print("("); Serial.print(logr[i].pid_log_derr[0]);Serial.print(","); Serial.print(logr[i].pid_log_derr[1]); Serial.print(")"); 
+        Serial.print("("); Serial.print(logr[i].pid_log_pow[0]);Serial.print(","); Serial.print(logr[i].pid_log_pow[1]); Serial.print(")"); 
+        Serial.print("("); Serial.print(logr[i].t_dist); Serial.print(","); Serial.print(logr[i].t_adv_d); Serial.print(")"); 
+        Serial.print("("); Serial.print(logr[i].t_ang); Serial.print(","); Serial.print(logr[i].t_adv_a); Serial.print(")");
+        */
+        PrintLogPair(logr[i].ec[0], logr[i].ec[1]); 
+        PrintLogPair(logr[i].pid_t_rate[0], logr[i].pid_t_rate[1]);
+        PrintLogPair(logr[i].pid_log_rate[0], logr[i].pid_log_rate[1]);
+        PrintLogPair(trg_rate[0]-logr[i].pid_log_rate[0], trg_rate[1]-logr[i].pid_log_rate[1]);
+        PrintLogPair(logr[i].pid_log_derr[0], logr[i].pid_log_derr[1]);
+        PrintLogPair(logr[i].pid_log_pow[0], logr[i].pid_log_pow[1]);
+        PrintLogPair(logr[i].t_dist, logr[i].t_adv_d);
+        PrintLogPair(logr[i].t_ang, logr[i].t_adv_a);
+        Serial.print(";"); 
+        logr[i].pid_log_idx=255; // mark as empty      
+        delay(10);
+        }
+    }      
+}
+
+void PrintLogPair(int16_t v1, int16_t v2) {
+  Serial.print("("); Serial.print(v1);Serial.print(","); Serial.print(v2); Serial.print(")"); 
+}
 
 //=======================================
 
@@ -717,7 +716,6 @@ int8_t Parse()
       if(buf[pos] != (i==0 ? ',' : 0)) return EnumErrorBadSyntax;
       if(m==0)       { if(cmd_power[i]) { cmd_power[i]=0; chg=true;}} 
       else if (m>0)  { if(m<pow_low) m=pow_low; if(m>M_POW_HIGH_LIM) m=M_POW_HIGH_LIM; if(drv_dir[i]!=1 || cmd_power[i]!=m) { cmd_power[i]=m; drv_dir[i]=1; chg=true;} } 
-      //else           { if((-m)<pow_low) m=-pow_low; if(drv_dir[i]!=2 || cmd_power[i]!=-m) {cmd_power[i]=-m; drv_dir[i]=2; chg=true;} }  
       else           { m=-m; if(m<pow_low) m=pow_low; if(m>M_POW_HIGH_LIM) m=M_POW_HIGH_LIM; if(drv_dir[i]!=2 || cmd_power[i]!=m) {cmd_power[i]=m; drv_dir[i]=2; chg=true;} }  
     }
     if(!cmd_power[0] && !cmd_power[1]) return EnumCmdStop;
