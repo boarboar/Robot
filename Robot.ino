@@ -160,6 +160,8 @@ uint8_t last_enc_cnt[2]={0,0};
 uint8_t last_enc_rate[2]={0,0}; 
 uint8_t calib_enc_rate_high=0; // target rate (counts per RATE_SAMPLE_PERIOD) for 100 power
 uint8_t calib_enc_rate_low=0; // target rate (counts per RATE_SAMPLE_PERIOD) for low power
+uint8_t calib_enc_bias_high=0; // bias rate (counts per RATE_SAMPLE_PERIOD) for 100 power
+uint8_t calib_enc_bias_low=0; // bias rate (counts per RATE_SAMPLE_PERIOD) for low power
 uint8_t pow_low=0;
 uint8_t pow_high=0;
 
@@ -242,6 +244,7 @@ void setup()
   //delay(RATE_SAMPLE_PERIOD); // calibration
   //ReadEnc();
   calib_enc_rate_low = (last_enc_cnt[0]+last_enc_cnt[1])/2;
+  calib_enc_bias_low = last_enc_cnt[1]-last_enc_cnt[0];
  
   pow_high=pow_low+M_POW_STEP;
   while(pow_high<M_POW_HIGH_LIM) {
@@ -257,6 +260,8 @@ void setup()
   //delay(RATE_SAMPLE_PERIOD); // calibration
   //ReadEnc();
   calib_enc_rate_high = (last_enc_cnt[0]+last_enc_cnt[1])/2;
+  calib_enc_bias_high = last_enc_cnt[1]-last_enc_cnt[0];
+
   StopDrive();
   
   digitalWrite(RED_LED, LOW);
@@ -350,11 +355,14 @@ void Notify() {
       addJson("U", (int16_t)(us_dist));
       }
       break; 
-    case EnumCmdTest:       
-      addJson("PL", pow_low);
-      addJson("PH", pow_high);
-      addJson("CRL", calib_enc_rate_low);       
-      addJson("CRH", calib_enc_rate_high); 
+    case EnumCmdTest:    
+      addJsonArr16_2("CLB_P_LH", pow_low, pow_high);   
+      addJsonArr16_2("CLB_R_LH", calib_enc_rate_low, calib_enc_rate_high);   
+      addJsonArr16_2("CLB_B_LH", calib_enc_bias_low, calib_enc_bias_high);   
+      //addJson("PL", pow_low);
+      //addJson("PH", pow_high);
+      //addJson("CRL", calib_enc_rate_low);       
+      //addJson("CRH", calib_enc_rate_high); 
       addJsonArr16_2("R", last_enc_rate[0], last_enc_rate[1]);
       addJsonArr16_2("EC", last_enc_cnt[0], last_enc_cnt[1]);
       delay(10);
@@ -372,12 +380,7 @@ void Notify() {
       addJson("L", last_dur); 
       break;
     case EnumCmdLog: {
-      addJson("LCNT", pid_cnt);
-      Serial.print("\"LOGR\":\"");             
       PrintLogRecs();
-      Serial.print("\",");
-      pid_cnt=0;
-      pid_log_ptr=0;
       break;
     }
     case EnumCmdWallLog: {
@@ -493,7 +496,6 @@ void StopTask()
 
 boolean TrackTask() 
 {
-  //if(F_ISTASKMOV()) return t_y/10+t_adv>=task_target;
   if(F_ISTASKMOV()) return (t_dist+t_adv_d)/10>=task_target; //mm
   else {
     // test. use global angle. So do this only after Reset !!!
@@ -590,8 +592,8 @@ void PID(uint16_t ctime)
         //err = trg_rate[i]-last_enc_rate[i];
         err = t_rate[i]-last_enc_rate[i];
         err_d = err-last_err[i];
-        //int_err[i]=int_err[i]/2+err;
-        int_err[i]=0;      
+        int_err[i]=int_err[i]/4+err;
+        //int_err[i]=0;      
         int16_t pow=cur_power[i]+((int16_t)err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI+(int16_t)err_d*M_PID_KD)/M_PID_DIV;
         if(pow<0) pow=0;
         if(pow>M_POW_MAX) pow=M_POW_MAX;
@@ -604,7 +606,6 @@ void PID(uint16_t ctime)
       logr[pid_log_ptr].pid_log_rate[i]=last_enc_rate[i];
       logr[pid_log_ptr].pid_log_derr[i]=err_d;
       //logr[pid_log_ptr].pid_log_ierr[i]=int_err[i];
-      //logr[pid_log_ptr].pid_log_pow[i]=pow;      
       logr[pid_log_ptr].pid_log_pow[i]=cur_power[i];      
     } 
   logr[pid_log_ptr].t_ang=RADN_TO_GRAD(t_ang);  
@@ -643,19 +644,23 @@ void Drive_s(uint8_t dir, uint8_t pow, int16_t p_en, uint8_t p1, uint8_t p2)
 
 void PrintLogRecs() {
     uint8_t i;
+    uint8_t last_cmd_id=0;
+    uint8_t first_idx=255;
+    uint8_t start_pos=0;
+    for(i=0; i<PID_LOG_SZ; i++) {
+      if(logr[i].pid_log_idx!=255 && logr[i].cmd_id>last_cmd_id) last_cmd_id=logr[i].cmd_id;
+    }
+    for(i=0; i<PID_LOG_SZ; i++) {
+      if(logr[i].pid_log_idx!=255 && logr[i].cmd_id==last_cmd_id && logr[i].pid_log_idx<first_idx) {first_idx=logr[i].pid_log_idx; start_pos=i; }
+    }
+    addJson("LCNT", pid_cnt);      
+    addJson("LCMD", last_cmd_id);      
+    addJson("FIDX", first_idx);      
+    addJson("FPOS", start_pos);      
+    Serial.print("\"LOGR\":\"");             
     for(i=0; i<PID_LOG_SZ; i++) {
       if(logr[i].pid_log_idx!=255) { // if not empty
         Serial.print(logr[i].pid_log_idx);Serial.print(":"); Serial.print(logr[i].cmd_id);Serial.print(":"); Serial.print(logr[i].ctime); Serial.print(":"); 
-        /*
-        Serial.print("("); Serial.print(logr[i].ec[0]);Serial.print(","); Serial.print(logr[i].ec[1]); Serial.print(")"); 
-        Serial.print("("); Serial.print(logr[i].pid_t_rate[0]);Serial.print(","); Serial.print(logr[i].pid_t_rate[1]); Serial.print(")"); 
-        Serial.print("("); Serial.print(logr[i].pid_log_rate[0]);Serial.print(","); Serial.print(logr[i].pid_log_rate[1]); Serial.print(")"); 
-        Serial.print("("); Serial.print(trg_rate[0]-logr[i].pid_log_rate[0]);Serial.print(","); Serial.print(trg_rate[1]-logr[i].pid_log_rate[1]); Serial.print(")"); 
-        Serial.print("("); Serial.print(logr[i].pid_log_derr[0]);Serial.print(","); Serial.print(logr[i].pid_log_derr[1]); Serial.print(")"); 
-        Serial.print("("); Serial.print(logr[i].pid_log_pow[0]);Serial.print(","); Serial.print(logr[i].pid_log_pow[1]); Serial.print(")"); 
-        Serial.print("("); Serial.print(logr[i].t_dist); Serial.print(","); Serial.print(logr[i].t_adv_d); Serial.print(")"); 
-        Serial.print("("); Serial.print(logr[i].t_ang); Serial.print(","); Serial.print(logr[i].t_adv_a); Serial.print(")");
-        */
         PrintLogPair(logr[i].ec[0], logr[i].ec[1]); 
         PrintLogPair(logr[i].pid_t_rate[0], logr[i].pid_t_rate[1]);
         PrintLogPair(logr[i].pid_log_rate[0], logr[i].pid_log_rate[1]);
@@ -668,7 +673,10 @@ void PrintLogRecs() {
         logr[i].pid_log_idx=255; // mark as empty      
         delay(10);
         }
-    }      
+    }    
+   Serial.print("\",");
+   pid_cnt=0;
+   pid_log_ptr=0;
 }
 
 void PrintLogPair(int16_t v1, int16_t v2) {

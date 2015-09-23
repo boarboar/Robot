@@ -8,3 +8,9 @@ tail -f -1 /dev/ttyATH0 | tee /tmp/ttycpy.log
 mkfifo pipe
 ls -l > pipe
 cat < pipe
+
+cat /dev/ttyATH0 | tee (grep LOGR > pipe)
+
+ls | tee >(grep foo | wc >foo.count) \
+         >(grep bar | wc >bar.count) \
+         | grep baz | wc >baz.count
