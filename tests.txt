@@ -1,5 +1,5 @@
 cat /dev/ttyATH0 | tee /tmp/ttycpy.log
-cat /dev/ttyATH0 | tee /tmp/ttycpy.log | grep LOGR > /tmp/log.log
+cat /dev/ttyATH0 | tee /tmp/ttycpy.log | grep --line-buffered LOGR > /tmp/log.log
 tail -f -1 /tmp/ttycpy.log
 tail -f -1 /tmp/log.log
 tail -f -1 /dev/ttyATH0 | tee /tmp/ttycpy.log
@@ -21,7 +21,9 @@ ls | tee >(grep foo | wc >foo.count) \
 tail -f logfile | grep --line-buffered LOGR |		 ...
 tail -f file | stdbuf -o0 grep my_pattern | ...
 
-tail -f <file> | awk '/pattern/{print $0};fflush("")'
+tail -f <file> | awk '/LOGR/{print $0};fflush("")'
 
 // sed ???
 tail -f logfile | sed -u -n -e '/org\.springframework/ s/\(.\{0,25\}\).*$/\1/p'
+
+cat /dev/ttyATH0 | tee /tmp/ttycpy.log | awk '/LOGR/{print $0};fflush("")'

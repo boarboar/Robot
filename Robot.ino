@@ -433,7 +433,8 @@ void StartDrive()
     if(drv_dir[i]) {
        cur_power[i]=cmd_power[i];
        if(cur_power[i]>pow_high) cur_power[i]=pow_high;
-       trg_rate[i]=map(cur_power[i], pow_low, pow_high, calib_enc_rate_low+calib_enc_bias_low*(1-i*2)/2, calib_enc_rate_high+calib_enc_bias_high*(1-i*2)/2);
+       //trg_rate[i]=map(cur_power[i], pow_low, pow_high, calib_enc_rate_low+calib_enc_bias_low*(1-i*2)/2, calib_enc_rate_high+calib_enc_bias_high*(1-i*2)/2);
+       trg_rate[i]=map(cur_power[i], pow_low, pow_high, calib_enc_rate_low, calib_enc_rate_high);
      } else {
        trg_rate[i]=0;
        cur_power[i]=0;
@@ -646,7 +647,6 @@ void PrintLogRecs() {
     for(i=0; i<PID_LOG_SZ; i++) {
       if(logr[i].pid_log_idx!=255 && logr[i].cmd_id>last_cmd_id) last_cmd_id=logr[i].cmd_id;
     }
-    if(!last_cmd_id) return;
     for(i=0; i<PID_LOG_SZ; i++) {
       if(logr[i].pid_log_idx!=255 && logr[i].cmd_id==last_cmd_id && logr[i].pid_log_idx<first_idx) {first_idx=logr[i].pid_log_idx; start_pos=i; }
     }
@@ -656,7 +656,7 @@ void PrintLogRecs() {
     addJson("FPOS", start_pos);      
     Serial.print("\"LOGR\":\"");             
     i=start_pos;
-    do {
+    if(last_cmd_id) do {
         Serial.print(logr[i].pid_log_idx);Serial.print(":"); Serial.print(logr[i].cmd_id);Serial.print(":"); Serial.print(logr[i].ctime); Serial.print(":"); 
         PrintLogPair(logr[i].ec[0], logr[i].ec[1]); 
         PrintLogPair(logr[i].pid_t_rate[0], logr[i].pid_t_rate[1]);
