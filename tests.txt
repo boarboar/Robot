@@ -9,7 +9,10 @@ mkfifo pipe
 ls -l > pipe
 cat < pipe
 
-cat /dev/ttyATH0 | tee (grep LOGR > pipe)
+cat /dev/ttyATH0 | tee (grep LOGR > pipe) // do not work
+
+cat /dev/ttyATH0 | tee /tmp/ttycpy.log > pipe
+cat pipe | grep LOGR > pipeg
 
 ls | tee >(grep foo | wc >foo.count) \
          >(grep bar | wc >bar.count) \
