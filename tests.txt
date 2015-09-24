@@ -17,3 +17,11 @@ cat pipe | grep LOGR > pipeg
 ls | tee >(grep foo | wc >foo.count) \
          >(grep bar | wc >bar.count) \
          | grep baz | wc >baz.count
+		 
+tail -f logfile | grep --line-buffered LOGR |		 ...
+tail -f file | stdbuf -o0 grep my_pattern | ...
+
+tail -f <file> | awk '/pattern/{print $0};fflush("")'
+
+// sed ???
+tail -f logfile | sed -u -n -e '/org\.springframework/ s/\(.\{0,25\}\).*$/\1/p'
