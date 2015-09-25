@@ -39,7 +39,7 @@ int16_t invsin(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm)
   return -((int32_t)ax*by-(int32_t)ay*bx)/norm;
 }
   
-int16_t asin32d(int16_t x, uint16_t norm) // xd: -norm..norm 
+int16_t asin32(int16_t x, uint16_t norm) // xd: -norm..norm 
 {
   return (int32_t)x+(int32_t)(((x*x)/norm)*x)/(6*norm);
 }

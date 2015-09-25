@@ -21,7 +21,14 @@ ls | tee >(grep foo | wc >foo.count) \
 tail -f logfile | grep --line-buffered LOGR |		 ...
 tail -f file | stdbuf -o0 grep my_pattern | ...
 
-tail -f <file> | awk '/LOGR/{print $0};fflush("")'
+stdbuf -oL
+
+tail -f <file> | awk '/LOGR/ { print $0 }; fflush("")'
+tail -f <file> | awk '/LOGR/ { print $0 }'
+tail -f <file> | awk '/LOGR/'
+tail -f <file> | awk '/LOGR/ { print $0 }; fflush()'
+
+system() ???
 
 // sed ???
 tail -f logfile | sed -u -n -e '/org\.springframework/ s/\(.\{0,25\}\).*$/\1/p'

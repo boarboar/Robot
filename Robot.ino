@@ -24,7 +24,7 @@ int32_t isin32d(int32_t xd);
 uint16_t isqrt32(uint32_t n);  
 //int32_t invsin(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm); 
 int16_t invsin(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm); 
-int16_t asin32d(int16_t x, uint16_t norm);
+int16_t asin32(int16_t x, uint16_t norm);
 void addJson(const char *name, int16_t value);
 void addJsonArr16_2(const char *name, int16_t v1, int16_t v2);
 
@@ -115,6 +115,7 @@ const unsigned int R_F_ISTASKROT=0x16;
 #define M_PID_KP   2
 #define M_PID_KI   0
 #define M_PID_KD   2
+#define M_PID_KT   1 // task err
 #define M_PID_DIV  4
 
 #define BUF_SIZE 16
@@ -160,8 +161,8 @@ uint8_t last_enc_cnt[2]={0,0};
 uint8_t last_enc_rate[2]={0,0}; 
 uint8_t calib_enc_rate_high=0; // target rate (counts per RATE_SAMPLE_PERIOD) for 100 power
 uint8_t calib_enc_rate_low=0; // target rate (counts per RATE_SAMPLE_PERIOD) for low power
-uint8_t calib_enc_bias_high=0; // bias rate (counts per RATE_SAMPLE_PERIOD) for 100 power
-uint8_t calib_enc_bias_low=0; // bias rate (counts per RATE_SAMPLE_PERIOD) for low power
+//uint8_t calib_enc_bias_high=0; // bias rate (counts per RATE_SAMPLE_PERIOD) for 100 power
+//uint8_t calib_enc_bias_low=0; // bias rate (counts per RATE_SAMPLE_PERIOD) for low power
 uint8_t pow_low=0;
 uint8_t pow_high=0;
 
@@ -209,8 +210,6 @@ void setup()
     pinMode(ports[i], OUTPUT);
   }
   analogFrequency(32);
-  //analogFrequency(100); // better
-  //analogFrequency(255); // bad
  
   pinMode(ENC1_IN, INPUT);     
   attachInterrupt(ENC1_IN, encodeInterrupt_1, CHANGE); 
@@ -244,7 +243,7 @@ void setup()
   //delay(RATE_SAMPLE_PERIOD); // calibration
   //ReadEnc();
   calib_enc_rate_low = (last_enc_cnt[0]+last_enc_cnt[1])/2;
-  calib_enc_bias_low = last_enc_cnt[1]-last_enc_cnt[0];
+  //calib_enc_bias_low = last_enc_cnt[1]-last_enc_cnt[0];
  
   pow_high=pow_low+M_POW_STEP;
   while(pow_high<M_POW_HIGH_LIM) {
@@ -260,7 +259,7 @@ void setup()
   //delay(RATE_SAMPLE_PERIOD); // calibration
   //ReadEnc();
   calib_enc_rate_high = (last_enc_cnt[0]+last_enc_cnt[1])/2;
-  calib_enc_bias_high = last_enc_cnt[1]-last_enc_cnt[0];
+  //calib_enc_bias_high = last_enc_cnt[1]-last_enc_cnt[0];
 
   StopDrive();
   
@@ -356,17 +355,18 @@ void Notify() {
       }
       break; 
     case EnumCmdTest:    
+      addJson("VCC", getVcc());
       addJsonArr16_2("CLB_P_LH", pow_low, pow_high);   
       addJsonArr16_2("CLB_R_LH", calib_enc_rate_low, calib_enc_rate_high);   
-      addJsonArr16_2("CLB_B_LH", calib_enc_bias_low, calib_enc_bias_high);    
+      //addJsonArr16_2("CLB_B_LH", calib_enc_bias_low, calib_enc_bias_high);    
       addJsonArr16_2("R", last_enc_rate[0], last_enc_rate[1]);
       addJsonArr16_2("EC", last_enc_cnt[0], last_enc_cnt[1]);
       delay(10);
       addJson("OVF", (int16_t)(F_ISOVERFLOW()));
       addJson("U", (int16_t)(us_dist));      
-      addJson("FT", flags&R_F_ISTASK);
-      addJson("FM", flags&R_F_ISTASKMOV);
-      addJson("FR", flags&R_F_ISTASKROT);
+      //addJson("FT", flags&R_F_ISTASK);
+      //addJson("FM", flags&R_F_ISTASKMOV);
+      //addJson("FR", flags&R_F_ISTASKROT);
       addJson("TG", task_target);
       delay(10);
       addJsonArr16_2("TN", (int16_t)t_nx, (int16_t)t_ny); // in normval
@@ -382,7 +382,8 @@ void Notify() {
     case EnumCmdWallLog: {
       Serial.print("\"LOGW\":\""); 
       for(uint8_t i=WALL_LOG_SZ; i>0; i--) { 
-        Serial.print(logw[i-1].adv);Serial.print(","); Serial.print(logw[i-1].usd);Serial.print(";"); 
+        //Serial.print(logw[i-1].adv);Serial.print(","); Serial.print(logw[i-1].usd);Serial.print(";"); 
+        PrintLogPair(logw[i-1].adv, logw[i-1].usd); 
         delay(10);
       }
       Serial.print("\",");
@@ -531,23 +532,28 @@ void ReadEnc()
     tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
     tx=(int32_t)tx*V_NORM/tl;  
     ty=(int32_t)ty*V_NORM/tl;
-    angle += asin32d(invsin(nx, ny, ty, -tx, V_NORM), V_NORM);
+    angle += asin32(invsin(nx, ny, ty, -tx, V_NORM), V_NORM);
     nx=ty; ny=-tx;
     x+=(int32_t)nx*dd/(2*V_NORM); // in 10th mm
     y+=(int32_t)ny*dd/(2*V_NORM); // in 10th mm
     // task vars
+    t_dist += dd/2; // in 10th mm
+    t_adv_d = dd/2; // in 10th mm
     tx=-t_ny; ty=t_nx;     
     tx += (int32_t)t_nx*df/WHEEL_BASE_MM_10;
     ty += (int32_t)t_ny*df/WHEEL_BASE_MM_10;
     tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
     tx=(int32_t)tx*V_NORM/tl;  
     ty=(int32_t)ty*V_NORM/tl;
-    tl=invsin(t_nx, t_ny, ty, -tx, V_NORM); //vector product = sin
-    tl=asin32d(tl, V_NORM); //asin
+    //tl=invsin(t_nx, t_ny, ty, -tx, V_NORM); //vector product = sin
+    //tl=asin32d(tl, V_NORM); //asin
+    /*
+    tl=asin32d(invsin(t_nx, t_ny, ty, -tx, V_NORM), V_NORM); //asin
     t_ang += tl;
-    t_dist += dd/2; // in 10th mm
     t_adv_a = tl;
-    t_adv_d = dd/2; // in 10th mm
+    */
+    t_adv_a = asin32(invsin(t_nx, t_ny, ty, -tx, V_NORM), V_NORM); //asin
+    t_ang += t_adv_a;
     t_nx=ty; t_ny=-tx;
     t_x+=(int32_t)t_nx*dd/(2*V_NORM); // in 10th mm
     t_y+=(int32_t)t_ny*dd/(2*V_NORM); // in 10th mm
@@ -561,14 +567,15 @@ void PID(uint16_t ctime)
     //uint8_t task_incr;    
     uint8_t t_rate[2];
     uint8_t i;
+    uint8_t task_err=0;
     t_rate[0]=trg_rate[0]; t_rate[1]=trg_rate[1];
     
     if(F_ISTASKANY()) {      
       if(F_ISTASKMOV()) {
+        task_err=t_x/100; //cm
         /*
         task_incr=calib_enc_rate_high-calib_enc_rate_low;
         task_progress=t_y/10; // mm
-        logr[pid_log_ptr].pid_t_err=t_x/10;  // mm
         for(i=0; i<2; i++) {
           if(task_progress<task_target/2) t_rate[i] = t_rate[i] + (uint32_t)task_incr*task_progress*2/task_target; //0..1
           else {
@@ -578,11 +585,9 @@ void PID(uint16_t ctime)
       } else { // rotate
       }     
     }
-    else
-      logr[pid_log_ptr].pid_t_err=0;    
 
     for(i=0; i<2; i++) {
-      int8_t err=0, err_d=0;
+      int8_t err=0, err_d=0, err_t=0;
       last_enc_rate[i]=(uint8_t)((uint16_t)last_enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
       logr[pid_log_ptr].ec[i]=last_enc_cnt[i];
       if(pid_cnt>=M_WUP_PID_CNT) { // do not correct for the first cycles - ca 100-200ms(warmup)
@@ -590,8 +595,11 @@ void PID(uint16_t ctime)
         err = t_rate[i]-last_enc_rate[i];
         err_d = err-last_err[i];
         int_err[i]=int_err[i]/4+err;
-        //int_err[i]=0;      
-        int16_t pow=cur_power[i]+((int16_t)err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI+(int16_t)err_d*M_PID_KD)/M_PID_DIV;
+        if(task_err) {
+          if(i) err_t=task_err; // right
+          else err_t=-task_err; // left
+        }
+        int16_t pow=cur_power[i]+((int16_t)err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI+(int16_t)err_d*M_PID_KD+(int16_t)err_t*M_PID_KT)/M_PID_DIV;
         if(pow<0) pow=0;
         if(pow>M_POW_MAX) pow=M_POW_MAX;
         if(err) analogWrite(i==0 ? M1_EN : M2_EN , pow); 
@@ -604,6 +612,7 @@ void PID(uint16_t ctime)
       logr[pid_log_ptr].pid_log_derr[i]=err_d;
       //logr[pid_log_ptr].pid_log_ierr[i]=int_err[i];
       logr[pid_log_ptr].pid_log_pow[i]=cur_power[i];      
+      logr[pid_log_ptr].pid_t_err=task_err;  // cm
     } 
   logr[pid_log_ptr].t_ang=RADN_TO_GRAD(t_ang);  
   logr[pid_log_ptr].t_adv_a=RADN_TO_GRAD(t_adv_a);
@@ -650,14 +659,15 @@ void PrintLogRecs() {
     for(i=0; i<PID_LOG_SZ; i++) {
       if(logr[i].pid_log_idx!=255 && logr[i].cmd_id==last_cmd_id && logr[i].pid_log_idx<first_idx) {first_idx=logr[i].pid_log_idx; start_pos=i; }
     }
-    addJson("LCNT", pid_cnt);      
-    addJson("LCMD", last_cmd_id);      
-    addJson("FIDX", first_idx);      
-    addJson("FPOS", start_pos);      
+    //addJson("LCNT", pid_cnt);      
+    //addJson("LCMD", last_cmd_id);      
+    //addJson("FIDX", first_idx);      
+    //addJson("FPOS", start_pos);      
     Serial.print("\"LOGR\":\"");             
     i=start_pos;
     if(last_cmd_id) do {
-        Serial.print(logr[i].pid_log_idx);Serial.print(":"); Serial.print(logr[i].cmd_id);Serial.print(":"); Serial.print(logr[i].ctime); Serial.print(":"); 
+        //Serial.print(logr[i].pid_log_idx);Serial.print(":"); Serial.print(logr[i].cmd_id);Serial.print(":"); Serial.print(logr[i].ctime); Serial.print(":"); 
+        PrintLog(logr[i].pid_log_idx); PrintLog(logr[i].cmd_id); PrintLog(logr[i].ctime);
         PrintLogPair(logr[i].ec[0], logr[i].ec[1]); 
         PrintLogPair(logr[i].pid_t_rate[0], logr[i].pid_t_rate[1]);
         PrintLogPair(logr[i].pid_log_rate[0], logr[i].pid_log_rate[1]);
@@ -666,6 +676,7 @@ void PrintLogRecs() {
         PrintLogPair(logr[i].pid_log_pow[0], logr[i].pid_log_pow[1]);
         PrintLogPair(logr[i].t_dist, logr[i].t_adv_d);
         PrintLogPair(logr[i].t_ang, logr[i].t_adv_a);
+        PrintLog(logr[i].pid_t_err);
         Serial.print(";"); 
         //logr[i].pid_log_idx=255; // mark as empty      
         delay(10);
@@ -673,29 +684,15 @@ void PrintLogRecs() {
         
     } while(i!=start_pos && logr[i].pid_log_idx!=255 && logr[i].cmd_id==last_cmd_id);
     
-    for(i=0; i<PID_LOG_SZ; i++) logr[i].pid_log_idx=255; // cleanup
-    /*
-    for(i=0; i<PID_LOG_SZ; i++) {
-      if(logr[i].pid_log_idx!=255) { // if not empty
-        Serial.print(logr[i].pid_log_idx);Serial.print(":"); Serial.print(logr[i].cmd_id);Serial.print(":"); Serial.print(logr[i].ctime); Serial.print(":"); 
-        PrintLogPair(logr[i].ec[0], logr[i].ec[1]); 
-        PrintLogPair(logr[i].pid_t_rate[0], logr[i].pid_t_rate[1]);
-        PrintLogPair(logr[i].pid_log_rate[0], logr[i].pid_log_rate[1]);
-        PrintLogPair(trg_rate[0]-logr[i].pid_log_rate[0], trg_rate[1]-logr[i].pid_log_rate[1]);
-        PrintLogPair(logr[i].pid_log_derr[0], logr[i].pid_log_derr[1]);
-        PrintLogPair(logr[i].pid_log_pow[0], logr[i].pid_log_pow[1]);
-        PrintLogPair(logr[i].t_dist, logr[i].t_adv_d);
-        PrintLogPair(logr[i].t_ang, logr[i].t_adv_a);
-        Serial.print(";"); 
-        logr[i].pid_log_idx=255; // mark as empty      
-        delay(10);
-        }
-    } */   
+   for(i=0; i<PID_LOG_SZ; i++) logr[i].pid_log_idx=255; // cleanup
    Serial.print("\",");
    pid_cnt=0;
    pid_log_ptr=0;
 }
 
+void PrintLog(int16_t v) {
+  Serial.print(v);Serial.print(","); 
+}
 void PrintLogPair(int16_t v1, int16_t v2) {
   Serial.print("("); Serial.print(v1);Serial.print(","); Serial.print(v2); Serial.print(")"); 
 }
@@ -822,5 +819,19 @@ void baseInterrupt(uint8_t i) {
   else v_enc_cnt[i]++; 
 } 
 
-
+// returns VCC in .01 volts
+int16_t getVcc() {
+  // start with the 1.5V internal reference
+  analogReference(INTERNAL1V5);
+  int data = analogRead(11);
+  // if overflow, VCC is > 3V, switch to the 2.5V reference
+  if (data==0x3ff) {
+    analogReference(INTERNAL2V5); 
+    data = (int16_t)map(analogRead(11), 0, 1023, 0, 500);
+  } else {
+    data = (int16_t)map(data, 0, 1023, 0, 300);
+  }
+  analogReference(DEFAULT);
+  return data;  
+}
 
