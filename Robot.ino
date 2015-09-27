@@ -171,7 +171,7 @@ int8_t int_err[2]={0,0};
 
 uint8_t flags=0; 
 
-#define PID_LOG_SZ 6
+#define PID_LOG_SZ 5
 uint8_t pid_cnt=0;
 uint8_t pid_log_ptr=0;
 
@@ -183,14 +183,13 @@ struct __attribute__((__packed__)) LogRec {
   uint8_t pid_t_rate[2];
   uint8_t pid_log_rate[2];
   int8_t pid_log_derr[2];
-  //int8_t pid_log_ierr[2];
+  int8_t pid_log_ierr[2];
   uint8_t pid_log_pow[2];
-  int8_t pid_t_err;
-  int8_t t_ang; //????
+  int8_t pid_t_err[2];
+  int8_t t_ang;
   int8_t t_dist;
   int8_t t_adv_a;
   int8_t t_adv_d;
-
 } logr[PID_LOG_SZ];
 
 #define WALL_LOG_SZ 4
@@ -324,7 +323,7 @@ void loop()
 }
 
 void Notify() {
-  addJson("Q", cmdResult);
+  addJson("CQ", cmdResult);
   addJson("I", cmd_id);
   switch(cmdResult) {
     case EnumCmdDrive: 
@@ -594,15 +593,15 @@ void PID(uint16_t ctime)
         //err = trg_rate[i]-last_enc_rate[i];
         err = t_rate[i]-last_enc_rate[i];
         err_d = err-last_err[i];
-        int_err[i]=int_err[i]/4+err;
+        int_err[i]=(int_err[i]+err)/2;
         if(task_err) {
           if(i) err_t=task_err; // right
           else err_t=-task_err; // left
         }
-        int16_t pow=cur_power[i]+((int16_t)err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI+(int16_t)err_d*M_PID_KD+(int16_t)err_t*M_PID_KT)/M_PID_DIV;
+        int16_t pow=cur_power[i]+((int16_t)err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI+(int16_t)err_d*M_PID_KD/*+(int16_t)err_t*M_PID_KT*/)/M_PID_DIV;
         if(pow<0) pow=0;
         if(pow>M_POW_MAX) pow=M_POW_MAX;
-        if(err) analogWrite(i==0 ? M1_EN : M2_EN , pow); 
+        if(cur_power[i]!=pow) analogWrite(i==0 ? M1_EN : M2_EN , pow); 
         cur_power[i]=pow;
       }
       last_err[i]=err;
@@ -610,9 +609,9 @@ void PID(uint16_t ctime)
       logr[pid_log_ptr].pid_t_rate[i]=t_rate[i];
       logr[pid_log_ptr].pid_log_rate[i]=last_enc_rate[i];
       logr[pid_log_ptr].pid_log_derr[i]=err_d;
-      //logr[pid_log_ptr].pid_log_ierr[i]=int_err[i];
+      logr[pid_log_ptr].pid_log_ierr[i]=int_err[i];
       logr[pid_log_ptr].pid_log_pow[i]=cur_power[i];      
-      logr[pid_log_ptr].pid_t_err=task_err;  // cm
+      logr[pid_log_ptr].pid_t_err[i]=err_t;  // cm
     } 
   logr[pid_log_ptr].t_ang=RADN_TO_GRAD(t_ang);  
   logr[pid_log_ptr].t_adv_a=RADN_TO_GRAD(t_adv_a);
@@ -659,24 +658,21 @@ void PrintLogRecs() {
     for(i=0; i<PID_LOG_SZ; i++) {
       if(logr[i].pid_log_idx!=255 && logr[i].cmd_id==last_cmd_id && logr[i].pid_log_idx<first_idx) {first_idx=logr[i].pid_log_idx; start_pos=i; }
     }
-    //addJson("LCNT", pid_cnt);      
-    //addJson("LCMD", last_cmd_id);      
-    //addJson("FIDX", first_idx);      
-    //addJson("FPOS", start_pos);      
     Serial.print("\"LOGR\":\"");             
     i=start_pos;
     if(last_cmd_id) do {
-        //Serial.print(logr[i].pid_log_idx);Serial.print(":"); Serial.print(logr[i].cmd_id);Serial.print(":"); Serial.print(logr[i].ctime); Serial.print(":"); 
         PrintLog(logr[i].pid_log_idx); PrintLog(logr[i].cmd_id); PrintLog(logr[i].ctime);
         PrintLogPair(logr[i].ec[0], logr[i].ec[1]); 
         PrintLogPair(logr[i].pid_t_rate[0], logr[i].pid_t_rate[1]);
         PrintLogPair(logr[i].pid_log_rate[0], logr[i].pid_log_rate[1]);
         PrintLogPair(trg_rate[0]-logr[i].pid_log_rate[0], trg_rate[1]-logr[i].pid_log_rate[1]);
         PrintLogPair(logr[i].pid_log_derr[0], logr[i].pid_log_derr[1]);
+        PrintLogPair(logr[i].pid_log_ierr[0], logr[i].pid_log_ierr[1]);
         PrintLogPair(logr[i].pid_log_pow[0], logr[i].pid_log_pow[1]);
+        Serial.print(":");
         PrintLogPair(logr[i].t_dist, logr[i].t_adv_d);
         PrintLogPair(logr[i].t_ang, logr[i].t_adv_a);
-        PrintLog(logr[i].pid_t_err);
+        PrintLogPair(logr[i].pid_t_err[0], logr[i].pid_t_err[1]);
         Serial.print(";"); 
         //logr[i].pid_log_idx=255; // mark as empty      
         delay(10);
@@ -694,7 +690,7 @@ void PrintLog(int16_t v) {
   Serial.print(v);Serial.print(","); 
 }
 void PrintLogPair(int16_t v1, int16_t v2) {
-  Serial.print("("); Serial.print(v1);Serial.print(","); Serial.print(v2); Serial.print(")"); 
+  Serial.print("("); Serial.print(v1);Serial.print(","); Serial.print(v2); Serial.print("),"); 
 }
 
 //=======================================
