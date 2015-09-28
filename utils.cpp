@@ -27,13 +27,6 @@ int32_t isin32d(int32_t xd)  // xd: -180...180; D=100
     return yd;
 }
 
-/* 
-int32_t invsin(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm) 
-{
-  return -((int32_t)ax*by-(int32_t)ay*bx)/norm;
-}
-  */
-
 int16_t invsin(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm) 
 {
   return -((int32_t)ax*by-(int32_t)ay*bx)/norm;
@@ -44,7 +37,13 @@ int16_t asin32(int16_t x, uint16_t norm) // xd: -norm..norm
   return (int32_t)x+(int32_t)(((x*x)/norm)*x)/(6*norm);
 }
 
- void addJson(const char *name, int16_t value) {
+int16_t inva16(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm) 
+{
+  int32_t x = ((int32_t)ay*bx-(int32_t)ax*by)/norm;
+  return (int32_t)x+(int32_t)(((x*x)/norm)*x)/(6*norm);
+}
+
+void addJson(const char *name, int16_t value) {
   Serial.print("\"");
   Serial.print(name);
   Serial.print("\":");

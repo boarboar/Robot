@@ -1,59 +1,9 @@
 mkfifo /root/pipe
+
 cat /dev/ttyATH0 | tee /tmp/ttycpy.log > /root/pipe
 
 cat /dev/ttyATH0 | tee /tmp/ttycpy.log | awk '/CQ/' > /root/pipe
 
 echo T > /dev/ttyATH0
 
-cat /dev/ttyATH0 | tee /tmp/ttycpy.log
-cat /dev/ttyATH0 | tee /tmp/ttycpy.log | grep --line-buffered LOGR > /tmp/log.log
-tail -f -1 /tmp/ttycpy.log
-tail -f -1 /tmp/log.log
-tail -f -1 /dev/ttyATH0 | tee /tmp/ttycpy.log
-
-
-mkfifo pipe
-ls -l > pipe
-cat < pipe
-
-cat /dev/ttyATH0 | tee (grep LOGR > pipe) // do not work
-
-cat /dev/ttyATH0 | tee /tmp/ttycpy.log > pipe
-
-cat pipe | grep LOGR > pipeg
-
-ls | tee >(grep foo | wc >foo.count) \
-         >(grep bar | wc >bar.count) \
-         | grep baz | wc >baz.count
-		 
-tail -f logfile | grep --line-buffered LOGR |		 ...
-tail -f file | stdbuf -o0 grep my_pattern | ...
-
-stdbuf -oL
-
-
-cat /dev/ttyATH0 | tee /tmp/ttycpy.log > /root/pipe
-
-cat /dev/ttyATH0 | awk '/LOGR/'
-
-// OK
-
-cat /dev/ttyATH0 | tee /tmp/ttycpy.log | awk '/LOGR/' > /root/pipe
-
-// OK !!!!!!!
-
-
-
-tail -f <file> | awk '/LOGR/ { print $0 }; fflush("")'
-tail -f <file> | awk '/LOGR/ { print $0 }'
-tail -f <file> | awk '/LOGR/'
-tail -f <file> | awk '/LOGR/ { print $0 }; fflush()'
-
-system() ???
-
-// sed ???
-tail -f logfile | sed -u -n -e '/org\.springframework/ s/\(.\{0,25\}\).*$/\1/p'
-
-cat /dev/ttyATH0 | tee /tmp/ttycpy.log | awk '/LOGR/{print $0};fflush("")'
-
-echo T > /dev/ttyATH0
+/etc/rc.local

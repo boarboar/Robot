@@ -22,9 +22,9 @@
 
 int32_t isin32d(int32_t xd);
 uint16_t isqrt32(uint32_t n);  
-//int32_t invsin(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm); 
-int16_t invsin(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm); 
-int16_t asin32(int16_t x, uint16_t norm);
+//int16_t invsin(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm); 
+//int16_t asin32(int16_t x, uint16_t norm);
+int16_t inva16(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm); 
 void addJson(const char *name, int16_t value);
 void addJsonArr16_2(const char *name, int16_t v1, int16_t v2);
 
@@ -142,14 +142,14 @@ volatile uint8_t v_es[2]={0,0};
 enum EnumCmd { EnumCmdDrive=1, EnumCmdTest=2, EnumCmdStop=3, EnumCmdLog=4, EnumCmdContinueDrive=5, EnumCmdRst=6, EnumCmdTaskMove=7, EnumCmdTaskRotate=8, EnumCmdWallLog=9};  
 enum EnumError { EnumErrorUnknown=-1, EnumErrorBadSyntax=-2, EnumErrorBadParam=-3, EnumErrorNone=-100};  
 
-int32_t task_target=0;   // in mm or degrees
+int32_t task_target=0;   // in mm or nrads
 
 int16_t t_nx, t_ny;
 int16_t t_x, t_y; //in 10thmm - up to 320 cm
-int16_t t_ang;
-int16_t t_dist;
-int16_t t_adv_d;
-int16_t t_adv_a;
+int32_t t_ang;    // in nrads
+int32_t t_dist;   // in 10th mm
+int16_t t_adv_d;  // in 10th mm
+int16_t t_adv_a;  // in nrads
 
 int8_t cmdResult=EnumErrorNone;
 uint8_t drv_dir[2]={0,0}; 
@@ -358,16 +358,18 @@ void Notify() {
       addJsonArr16_2("CLB_P_LH", pow_low, pow_high);   
       addJsonArr16_2("CLB_R_LH", calib_enc_rate_low, calib_enc_rate_high);   
       //addJsonArr16_2("CLB_B_LH", calib_enc_bias_low, calib_enc_bias_high);    
-      addJsonArr16_2("R", last_enc_rate[0], last_enc_rate[1]);
-      addJsonArr16_2("EC", last_enc_cnt[0], last_enc_cnt[1]);
+      //addJsonArr16_2("R", last_enc_rate[0], last_enc_rate[1]);
+      //addJsonArr16_2("EC", last_enc_cnt[0], last_enc_cnt[1]);
       delay(10);
-      addJson("OVF", (int16_t)(F_ISOVERFLOW()));
+      //addJson("OVF", (int16_t)(F_ISOVERFLOW()));
+      addJsonArr16_2("N", (int16_t)nx, (int16_t)ny); // in normval
+      addJsonArr16_2("X", (int16_t)(x/100), (int16_t)(y/100)); // in cm
       addJson("U", (int16_t)(us_dist));      
       //addJson("FT", flags&R_F_ISTASK);
       //addJson("FM", flags&R_F_ISTASKMOV);
       //addJson("FR", flags&R_F_ISTASKROT);
-      addJson("TG", task_target);
       delay(10);
+      addJson("TG", task_target);
       addJsonArr16_2("TN", (int16_t)t_nx, (int16_t)t_ny); // in normval
       addJsonArr16_2("TX", (int16_t)(t_x/100), (int16_t)(t_y/100)); // in cm
       addJsonArr16_2("TD", (int16_t)(t_dist/100), (int16_t)(t_adv_d/100)); // in cm 
@@ -519,7 +521,7 @@ void ReadEnc()
     else s[i]=last_enc_cnt[i];
   }
 
-  // dead reckoning 
+  // tracking 
   if(s[0] || s[1]) {  
     dd = CHGST_TO_MM_10(s[0]+s[1]); // in 10th mm
     df = CHGST_TO_MM_10(s[0]-s[1]); // in 10th mm
@@ -531,7 +533,8 @@ void ReadEnc()
     tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
     tx=(int32_t)tx*V_NORM/tl;  
     ty=(int32_t)ty*V_NORM/tl;
-    angle += asin32(invsin(nx, ny, ty, -tx, V_NORM), V_NORM);
+    //angle += asin32(invsin(nx, ny, ty, -tx, V_NORM), V_NORM);
+    angle += inva16(nx, ny, ty, -tx, V_NORM); //angle from vector product
     nx=ty; ny=-tx;
     x+=(int32_t)nx*dd/(2*V_NORM); // in 10th mm
     y+=(int32_t)ny*dd/(2*V_NORM); // in 10th mm
@@ -544,14 +547,8 @@ void ReadEnc()
     tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
     tx=(int32_t)tx*V_NORM/tl;  
     ty=(int32_t)ty*V_NORM/tl;
-    //tl=invsin(t_nx, t_ny, ty, -tx, V_NORM); //vector product = sin
-    //tl=asin32d(tl, V_NORM); //asin
-    /*
-    tl=asin32d(invsin(t_nx, t_ny, ty, -tx, V_NORM), V_NORM); //asin
-    t_ang += tl;
-    t_adv_a = tl;
-    */
-    t_adv_a = asin32(invsin(t_nx, t_ny, ty, -tx, V_NORM), V_NORM); //asin
+    //t_adv_a = asin32(invsin(t_nx, t_ny, ty, -tx, V_NORM), V_NORM); //asin
+    t_adv_a = inva16(t_nx, t_ny, ty, -tx, V_NORM); //angle from vector product
     t_ang += t_adv_a;
     t_nx=ty; t_ny=-tx;
     t_x+=(int32_t)t_nx*dd/(2*V_NORM); // in 10th mm
@@ -588,7 +585,7 @@ void PID(uint16_t ctime)
     for(i=0; i<2; i++) {
       int8_t err=0, err_d=0, err_t=0;
       last_enc_rate[i]=(uint8_t)((uint16_t)last_enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
-      logr[pid_log_ptr].ec[i]=last_enc_cnt[i];
+      //logr[pid_log_ptr].ec[i]=last_enc_cnt[i];
       if(pid_cnt>=M_WUP_PID_CNT) { // do not correct for the first cycles - ca 100-200ms(warmup)
         //err = trg_rate[i]-last_enc_rate[i];
         err = t_rate[i]-last_enc_rate[i];
@@ -606,6 +603,7 @@ void PID(uint16_t ctime)
       }
       last_err[i]=err;
       // log entry
+      logr[pid_log_ptr].ec[i]=last_enc_cnt[i];
       logr[pid_log_ptr].pid_t_rate[i]=t_rate[i];
       logr[pid_log_ptr].pid_log_rate[i]=last_enc_rate[i];
       logr[pid_log_ptr].pid_log_derr[i]=err_d;
@@ -613,6 +611,7 @@ void PID(uint16_t ctime)
       logr[pid_log_ptr].pid_log_pow[i]=cur_power[i];      
       logr[pid_log_ptr].pid_t_err[i]=err_t;  // cm
     } 
+  // log entry  
   logr[pid_log_ptr].t_ang=RADN_TO_GRAD(t_ang);  
   logr[pid_log_ptr].t_adv_a=RADN_TO_GRAD(t_adv_a);
   logr[pid_log_ptr].t_dist=t_dist/100; //cm  
@@ -621,6 +620,7 @@ void PID(uint16_t ctime)
   logr[pid_log_ptr].cmd_id=cmd_id;
   logr[pid_log_ptr].ctime=ctime;
   logr[pid_log_ptr].pid_log_idx=pid_cnt++;   
+  Serial.print("@LP:"); PrintLogReg(i); Serial.println();  
   // log advance/wrap  
   if(++pid_log_ptr>=PID_LOG_SZ) pid_log_ptr=0;        
   }
@@ -661,6 +661,20 @@ void PrintLogRecs() {
     Serial.print("\"LOGR\":\"");             
     i=start_pos;
     if(last_cmd_id) do {
+        PrintLogReg(i);
+        Serial.print(";"); 
+        delay(10);
+        if(++i>=PID_LOG_SZ) i=0;
+        
+    } while(i!=start_pos && logr[i].pid_log_idx!=255 && logr[i].cmd_id==last_cmd_id);
+    
+   for(i=0; i<PID_LOG_SZ; i++) logr[i].pid_log_idx=255; // cleanup
+   Serial.print("\",");
+   pid_cnt=0;
+   pid_log_ptr=0;
+}
+
+void PrintLogReg(uint8_t i) {
         PrintLog(logr[i].pid_log_idx); PrintLog(logr[i].cmd_id); PrintLog(logr[i].ctime);
         PrintLogPair(logr[i].ec[0], logr[i].ec[1]); 
         PrintLogPair(logr[i].pid_t_rate[0], logr[i].pid_t_rate[1]);
@@ -673,17 +687,7 @@ void PrintLogRecs() {
         PrintLogPair(logr[i].t_dist, logr[i].t_adv_d);
         PrintLogPair(logr[i].t_ang, logr[i].t_adv_a);
         PrintLogPair(logr[i].pid_t_err[0], logr[i].pid_t_err[1]);
-        Serial.print(";"); 
-        //logr[i].pid_log_idx=255; // mark as empty      
-        delay(10);
-        if(++i>=PID_LOG_SZ) i=0;
-        
-    } while(i!=start_pos && logr[i].pid_log_idx!=255 && logr[i].cmd_id==last_cmd_id);
-    
-   for(i=0; i<PID_LOG_SZ; i++) logr[i].pid_log_idx=255; // cleanup
-   Serial.print("\",");
-   pid_cnt=0;
-   pid_log_ptr=0;
+ 
 }
 
 void PrintLog(int16_t v) {
