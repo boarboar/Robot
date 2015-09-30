@@ -171,7 +171,7 @@ int8_t int_err[2]={0,0};
 
 uint8_t flags=0; 
 
-#define PID_LOG_SZ 5
+#define PID_LOG_SZ 4
 uint8_t pid_cnt=0;
 uint8_t pid_log_ptr=0;
 
