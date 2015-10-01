@@ -20,6 +20,8 @@
 
 // Besides, the different pins for the separate analogwrite channels should be on the separate timer+compare 
 
+uint8_t Match(char *buf, uint8_t bytes, const char *cmd); 
+uint8_t bctoi(char *buf, uint8_t index, int16_t *val); 
 int32_t isin32d(int32_t xd);
 uint16_t isqrt32(uint32_t n);  
 //int16_t invsin(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm); 
@@ -47,7 +49,8 @@ void addJsonArr16_2(const char *name, int16_t v1, int16_t v2);
 
 // common vars 
 //const unsigned int PID_TIMEOUT = 100;
-const unsigned int PID_TIMEOUT = 100;
+const unsigned int PID_TIMEOUT_HIGH = 200;
+const unsigned int PID_TIMEOUT_LOW = 100;
 //const unsigned int RESP_TIMEOUT = 90;
 const unsigned int RESP_TIMEOUT = 25; // C_T+R_T >= 75ms
 const unsigned int CMD_TIMEOUT = 600; 
@@ -119,14 +122,15 @@ const unsigned int R_F_ISTASKROT=0x16;
 #define M_PID_DIV  4
 
 #define BUF_SIZE 16
-byte buf[BUF_SIZE];
-byte bytes = 0;
+char buf[BUF_SIZE];
+uint8_t bytes = 0;
 
 uint32_t lastCommandTime; // =lastTaskTime
 uint32_t lastPidTime;
 uint16_t last_dur=0;
 //uint16_t us_meas_dur=0;
 
+uint8_t pid_to=0;
 uint8_t cmd_id=0;
 
 int32_t dist=0;  // in 10thmm
@@ -237,10 +241,6 @@ void setup()
    if(last_enc_cnt[0]>=RATE_SAMPLE_TARGET_LOW && last_enc_cnt[1]>=RATE_SAMPLE_TARGET_LOW) break;
    pow_low+=M_POW_STEP;
   }
-  
-  //ReadEnc();
-  //delay(RATE_SAMPLE_PERIOD); // calibration
-  //ReadEnc();
   calib_enc_rate_low = (last_enc_cnt[0]+last_enc_cnt[1])/2;
   //calib_enc_bias_low = last_enc_cnt[1]-last_enc_cnt[0];
  
@@ -254,9 +254,6 @@ void setup()
    pow_high+=M_POW_STEP;
   }
   
-  //ReadEnc();
-  //delay(RATE_SAMPLE_PERIOD); // calibration
-  //ReadEnc();
   calib_enc_rate_high = (last_enc_cnt[0]+last_enc_cnt[1])/2;
   //calib_enc_bias_high = last_enc_cnt[1]-last_enc_cnt[0];
 
@@ -279,7 +276,7 @@ void loop()
   if (F_ISDRIVE() && (us_dist<US_WALL_DIST && drv_dir[0]+drv_dir[1]==2)) StopDrive(); 
   if ( cycleTime < lastPidTime) lastPidTime=0; // wraparound, not correct   
   uint16_t ctime = cycleTime - lastPidTime;
-  if ( ctime >= PID_TIMEOUT) { // PID cycle    
+  if ( ctime >= pid_to) { // PID cycle    
     ReadEnc();
     if (F_ISDRIVE()) {
       PID(ctime); 
@@ -383,7 +380,6 @@ void Notify() {
     case EnumCmdWallLog: {
       Serial.print("\"LOGW\":\""); 
       for(uint8_t i=WALL_LOG_SZ; i>0; i--) { 
-        //Serial.print(logw[i-1].adv);Serial.print(","); Serial.print(logw[i-1].usd);Serial.print(";"); 
         PrintLogPair(logw[i-1].adv, logw[i-1].usd); 
         delay(10);
       }
@@ -453,7 +449,8 @@ void StartDrive()
   }        
   pid_cnt=0;
   pid_log_ptr=0;
-  lastPidTime=millis(); //NB!
+  pid_to = PID_TIMEOUT_HIGH;
+  lastPidTime=millis(); 
 }
 
 void StopDrive() 
@@ -494,14 +491,19 @@ void StopTask()
 }
 
 boolean TrackTask() 
-{
-  if(F_ISTASKMOV()) return (t_dist+t_adv_d)/10>=task_target; //mm
+{ 
+  if(F_ISTASKMOV()) {
+    if((t_dist+2*t_adv_d)/10>=task_target) pid_to = PID_TIMEOUT_LOW;
+    return (t_dist+t_adv_d)/10>=task_target; //mm
+  }
   else {
     // test. use global angle. So do this only after Reset !!!
     if(task_target>0) { //clockwise
+      if((t_dist+2*t_adv_d)>=task_target) pid_to = PID_TIMEOUT_LOW;
       return t_ang+t_adv_a>=task_target;
     }
     else { //counterclockwise
+      if((t_dist+2*t_adv_d)<=task_target) pid_to = PID_TIMEOUT_LOW;
       return t_ang+t_adv_a<=task_target;
     }
   }
@@ -533,7 +535,6 @@ void ReadEnc()
     tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
     tx=(int32_t)tx*V_NORM/tl;  
     ty=(int32_t)ty*V_NORM/tl;
-    //angle += asin32(invsin(nx, ny, ty, -tx, V_NORM), V_NORM);
     angle += inva16(nx, ny, ty, -tx, V_NORM); //angle from vector product
     nx=ty; ny=-tx;
     x+=(int32_t)nx*dd/(2*V_NORM); // in 10th mm
@@ -547,7 +548,6 @@ void ReadEnc()
     tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
     tx=(int32_t)tx*V_NORM/tl;  
     ty=(int32_t)ty*V_NORM/tl;
-    //t_adv_a = asin32(invsin(t_nx, t_ny, ty, -tx, V_NORM), V_NORM); //asin
     t_adv_a = inva16(t_nx, t_ny, ty, -tx, V_NORM); //angle from vector product
     t_ang += t_adv_a;
     t_nx=ty; t_ny=-tx;
@@ -585,7 +585,6 @@ void PID(uint16_t ctime)
     for(i=0; i<2; i++) {
       int8_t err=0, err_d=0, err_t=0;
       last_enc_rate[i]=(uint8_t)((uint16_t)last_enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
-      //logr[pid_log_ptr].ec[i]=last_enc_cnt[i];
       if(pid_cnt>=M_WUP_PID_CNT) { // do not correct for the first cycles - ca 100-200ms(warmup)
         //err = trg_rate[i]-last_enc_rate[i];
         err = t_rate[i]-last_enc_rate[i];
@@ -620,7 +619,7 @@ void PID(uint16_t ctime)
   logr[pid_log_ptr].cmd_id=cmd_id;
   logr[pid_log_ptr].ctime=ctime;
   logr[pid_log_ptr].pid_log_idx=pid_cnt++;   
-  Serial.print("@LP:"); PrintLogReg(i); Serial.println();  
+  Serial.print("@LP:"); PrintLogReg(pid_log_ptr); Serial.println();  
   // log advance/wrap  
   if(++pid_log_ptr>=PID_LOG_SZ) pid_log_ptr=0;        
   }
@@ -728,14 +727,16 @@ int8_t Parse()
   byte pos;
   int16_t m;
   
-  if((pos=Match("D"))) {    
+  if((pos=Match(buf, bytes, "D"))) {    
     boolean chg=false;
     if(pos>=bytes || buf[pos]!='=') return EnumErrorBadSyntax;
     for(int i=0; i<2; i++) {      
       pos++;    
-      pos = bctoi(pos, &m);      
+      //pos = bctoi(pos, &m);      
+      pos = bctoi(buf, pos, &m);      
       if(m<-255 || m>254) return EnumErrorBadParam;
-      if(buf[pos] != (i==0 ? ',' : 0)) return EnumErrorBadSyntax;
+      //if(buf[pos] != (i==0 ? ',' : 0)) return EnumErrorBadSyntax;
+      if(i==0 && buf[pos] !=',') return EnumErrorBadSyntax;
       if(m==0)       { if(cmd_power[i]) { cmd_power[i]=0; chg=true;}} 
       else if (m>0)  { if(m<pow_low) m=pow_low; if(m>M_POW_HIGH_LIM) m=M_POW_HIGH_LIM; if(drv_dir[i]!=1 || cmd_power[i]!=m) { cmd_power[i]=m; drv_dir[i]=1; chg=true;} } 
       else           { m=-m; if(m<pow_low) m=pow_low; if(m>M_POW_HIGH_LIM) m=M_POW_HIGH_LIM; if(drv_dir[i]!=2 || cmd_power[i]!=m) {cmd_power[i]=m; drv_dir[i]=2; chg=true;} }  
@@ -743,41 +744,44 @@ int8_t Parse()
     if(!cmd_power[0] && !cmd_power[1]) return EnumCmdStop;
     return chg ? EnumCmdDrive : EnumCmdContinueDrive;
   } 
-  else if((pos=Match("L"))) {
+  else if((pos=Match(buf, bytes, "L"))) {
     return EnumCmdLog;
   }
-  else if((pos=Match("W"))) {
+  else if((pos=Match(buf, bytes, "W"))) {
     return EnumCmdWallLog;
   } 
-  else if((pos=Match("R"))) {
+  else if((pos=Match(buf, bytes, "R"))) {
     return EnumCmdRst;
   }
-  else if((pos=Match("TM"))) {
+  else if((pos=Match(buf, bytes, "TM"))) {
     if(pos>=bytes || buf[pos]!='=') return EnumErrorBadSyntax;
     pos++;
-    pos = bctoi(pos, &m);      
+    //pos = bctoi(pos, &m);      
+    pos = bctoi(buf, pos, &m);      
     if(!m) return EnumErrorBadParam;
     task_target=m*10; // mm
     F_SETTASKMOV();
     return EnumCmdTaskMove;
   }
-  else if((pos=Match("TR"))) {
+  else if((pos=Match(buf, bytes, "TR"))) {
     pos++;
-    pos = bctoi(pos, &m);      
+    //pos = bctoi(pos, &m);      
+    pos = bctoi(buf, pos, &m);      
     if(!m) return EnumErrorBadParam;
     task_target=GRAD_TO_RADN(m);  // rad norm  
     F_SETTASKROT();
     return EnumCmdTaskRotate;
   }
-  else if((pos=Match("T"))) {
+  else if((pos=Match(buf, bytes, "T"))) {
     return EnumCmdTest;
   }
   else return EnumErrorUnknown;
 }
 
-byte Match(const char *cmd) 
+/*
+uint8_t Match(char *buf, const char *cmd) 
 {
-  byte pos=0;
+  uint8_t pos=0;
   while(pos<bytes && *cmd && buf[pos]==*cmd) {
     pos++;
     cmd++;
@@ -786,7 +790,8 @@ byte Match(const char *cmd)
   else return 0;
 }
 
-byte bctoi(byte index, int16_t *val) 
+
+byte bctoi(char *buf, byte index, int16_t *val) 
 {
   int i=0;
   boolean sign=false;
@@ -805,6 +810,7 @@ byte bctoi(byte index, int16_t *val)
   *val=sign ? -i : i;
   return index;
 }
+*/
 
 void encodeInterrupt_1() { baseInterrupt(0); }
 

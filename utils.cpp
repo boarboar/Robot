@@ -1,5 +1,36 @@
 #include <Energia.h>
 
+uint8_t Match(char *buf, uint8_t bytes, const char *cmd) 
+{
+  uint8_t pos=0;
+  while(pos<bytes && *cmd && buf[pos]==*cmd) {
+    pos++;
+    cmd++;
+  }
+  if(!*cmd) return pos;
+  else return 0;
+}
+
+uint8_t bctoi(char *buf, uint8_t index, int16_t *val) 
+{
+  int16_t i=0;
+  boolean sign=false;
+  while(isspace(buf[index])) index++;
+  if(buf[index]=='+') index++;
+  else if(buf[index]=='-') { 
+    sign=true; 
+    index++;
+  }
+  while (isdigit(buf[index]))
+  {
+    i *= 10;
+    i += buf[index] - '0';
+    index++;
+  }
+  *val=sign ? -i : i;
+  return index;
+}
+
 uint16_t isqrt32(uint32_t n)  
     {  
         uint16_t c = 0x8000;  
