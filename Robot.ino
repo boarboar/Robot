@@ -118,7 +118,7 @@ const unsigned int R_F_ISTASKROT=0x16;
 #define M_PID_KP   2
 #define M_PID_KI   0
 #define M_PID_KD   2
-#define M_PID_KT   1 // task err
+//#define M_PID_KT   1 // task err
 #define M_PID_DIV  4
 
 #define BUF_SIZE 16
@@ -175,7 +175,7 @@ int8_t int_err[2]={0,0};
 
 uint8_t flags=0; 
 
-#define PID_LOG_SZ 4
+#define PID_LOG_SZ 2
 uint8_t pid_cnt=0;
 uint8_t pid_log_ptr=0;
 
@@ -196,13 +196,13 @@ struct __attribute__((__packed__)) LogRec {
   int8_t t_adv_d;
 } logr[PID_LOG_SZ];
 
-#define WALL_LOG_SZ 4
+#define WALL_LOG_SZ 8
 //uint8_t wl_ptr=0;
 struct __attribute__((__packed__)) WallRec {
   //uint8_t idx;
   int8_t adv; //cm
   int8_t usd; //cm
-} logw[WALL_LOG_SZ];
+} logw[WALL_LOG_SZ]; // candidate for calman filter
 
 void setup()
 { 
@@ -499,11 +499,11 @@ boolean TrackTask()
   else {
     // test. use global angle. So do this only after Reset !!!
     if(task_target>0) { //clockwise
-      if((t_dist+2*t_adv_d)>=task_target) pid_to = PID_TIMEOUT_LOW;
+      if((t_ang+2*t_adv_a)>=task_target) pid_to = PID_TIMEOUT_LOW;
       return t_ang+t_adv_a>=task_target;
     }
     else { //counterclockwise
-      if((t_dist+2*t_adv_d)<=task_target) pid_to = PID_TIMEOUT_LOW;
+      if((t_ang+2*t_adv_a)<=task_target) pid_to = PID_TIMEOUT_LOW;
       return t_ang+t_adv_a<=task_target;
     }
   }
@@ -561,14 +561,20 @@ void PID(uint16_t ctime)
   if(ctime>0) {
     //int16_t task_progress;
     //uint8_t task_incr;    
-    uint8_t t_rate[2];
+    //uint8_t t_rate[2];
     uint8_t i;
-    uint8_t task_err=0;
-    t_rate[0]=trg_rate[0]; t_rate[1]=trg_rate[1];
+    int8_t t_err[2];
+    //t_rate[0]=trg_rate[0]; t_rate[1]=trg_rate[1];
+    t_err[0]=t_err[1]=0;
     
     if(F_ISTASKANY()) {      
       if(F_ISTASKMOV()) {
-        task_err=t_x/100; //cm
+        int8_t task_err=t_x/100; //cm
+        if(task_err>1) task_err=1;
+        else if (task_err<-1) task_err=-1;
+        else task_err=0; 
+        t_err[0]=-task_err;
+        t_err[1]=task_err;
         /*
         task_incr=calib_enc_rate_high-calib_enc_rate_low;
         task_progress=t_y/10; // mm
@@ -583,18 +589,14 @@ void PID(uint16_t ctime)
     }
 
     for(i=0; i<2; i++) {
-      int8_t err=0, err_d=0, err_t=0;
+      int8_t err=0, err_d=0;
       last_enc_rate[i]=(uint8_t)((uint16_t)last_enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
       if(pid_cnt>=M_WUP_PID_CNT) { // do not correct for the first cycles - ca 100-200ms(warmup)
-        //err = trg_rate[i]-last_enc_rate[i];
-        err = t_rate[i]-last_enc_rate[i];
+        err = trg_rate[i]-last_enc_rate[i]+t_err[i];
+        //err = t_rate[i]-last_enc_rate[i]+t_err[i];
         err_d = err-last_err[i];
-        int_err[i]=(int_err[i]+err)/2;
-        if(task_err) {
-          if(i) err_t=task_err; // right
-          else err_t=-task_err; // left
-        }
-        int16_t pow=cur_power[i]+((int16_t)err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI+(int16_t)err_d*M_PID_KD/*+(int16_t)err_t*M_PID_KT*/)/M_PID_DIV;
+        int_err[i]=int_err[i]+err;
+        int16_t pow=cur_power[i]+((int16_t)err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI+(int16_t)err_d*M_PID_KD)/M_PID_DIV;
         if(pow<0) pow=0;
         if(pow>M_POW_MAX) pow=M_POW_MAX;
         if(cur_power[i]!=pow) analogWrite(i==0 ? M1_EN : M2_EN , pow); 
@@ -603,12 +605,13 @@ void PID(uint16_t ctime)
       last_err[i]=err;
       // log entry
       logr[pid_log_ptr].ec[i]=last_enc_cnt[i];
-      logr[pid_log_ptr].pid_t_rate[i]=t_rate[i];
+      //logr[pid_log_ptr].pid_t_rate[i]=t_rate[i];
+      logr[pid_log_ptr].pid_t_rate[i]=trg_rate[i];
       logr[pid_log_ptr].pid_log_rate[i]=last_enc_rate[i];
       logr[pid_log_ptr].pid_log_derr[i]=err_d;
       logr[pid_log_ptr].pid_log_ierr[i]=int_err[i];
       logr[pid_log_ptr].pid_log_pow[i]=cur_power[i];      
-      logr[pid_log_ptr].pid_t_err[i]=err_t;  // cm
+      logr[pid_log_ptr].pid_t_err[i]=t_err[i];  // cm
     } 
   // log entry  
   logr[pid_log_ptr].t_ang=RADN_TO_GRAD(t_ang);  
@@ -722,20 +725,18 @@ boolean ReadSerialCommand()
 }
 
 int8_t Parse()
-// Expect: "D=100,100"
 {  
   byte pos;
   int16_t m;
   
   if((pos=Match(buf, bytes, "D"))) {    
+    // Expect: "D=100,100"
     boolean chg=false;
     if(pos>=bytes || buf[pos]!='=') return EnumErrorBadSyntax;
     for(int i=0; i<2; i++) {      
       pos++;    
-      //pos = bctoi(pos, &m);      
       pos = bctoi(buf, pos, &m);      
       if(m<-255 || m>254) return EnumErrorBadParam;
-      //if(buf[pos] != (i==0 ? ',' : 0)) return EnumErrorBadSyntax;
       if(i==0 && buf[pos] !=',') return EnumErrorBadSyntax;
       if(m==0)       { if(cmd_power[i]) { cmd_power[i]=0; chg=true;}} 
       else if (m>0)  { if(m<pow_low) m=pow_low; if(m>M_POW_HIGH_LIM) m=M_POW_HIGH_LIM; if(drv_dir[i]!=1 || cmd_power[i]!=m) { cmd_power[i]=m; drv_dir[i]=1; chg=true;} } 
@@ -756,7 +757,6 @@ int8_t Parse()
   else if((pos=Match(buf, bytes, "TM"))) {
     if(pos>=bytes || buf[pos]!='=') return EnumErrorBadSyntax;
     pos++;
-    //pos = bctoi(pos, &m);      
     pos = bctoi(buf, pos, &m);      
     if(!m) return EnumErrorBadParam;
     task_target=m*10; // mm
@@ -765,7 +765,6 @@ int8_t Parse()
   }
   else if((pos=Match(buf, bytes, "TR"))) {
     pos++;
-    //pos = bctoi(pos, &m);      
     pos = bctoi(buf, pos, &m);      
     if(!m) return EnumErrorBadParam;
     task_target=GRAD_TO_RADN(m);  // rad norm  
@@ -777,40 +776,6 @@ int8_t Parse()
   }
   else return EnumErrorUnknown;
 }
-
-/*
-uint8_t Match(char *buf, const char *cmd) 
-{
-  uint8_t pos=0;
-  while(pos<bytes && *cmd && buf[pos]==*cmd) {
-    pos++;
-    cmd++;
-  }
-  if(!*cmd) return pos;
-  else return 0;
-}
-
-
-byte bctoi(char *buf, byte index, int16_t *val) 
-{
-  int i=0;
-  boolean sign=false;
-  while(isspace(buf[index])) index++;
-  if(buf[index]=='+') index++;
-  else if(buf[index]=='-') { 
-    sign=true; 
-    index++;
-  }
-  while (isdigit(buf[index]))
-  {
-    i *= 10;
-    i += buf[index] - '0';
-    index++;
-  }
-  *val=sign ? -i : i;
-  return index;
-}
-*/
 
 void encodeInterrupt_1() { baseInterrupt(0); }
 
