@@ -175,7 +175,7 @@ int8_t int_err[2]={0,0};
 
 uint8_t flags=0; 
 
-#define PID_LOG_SZ 2
+#define PID_LOG_SZ 1
 uint8_t pid_cnt=0;
 uint8_t pid_log_ptr=0;
 
@@ -190,13 +190,14 @@ struct __attribute__((__packed__)) LogRec {
   int8_t pid_log_ierr[2];
   uint8_t pid_log_pow[2];
   int8_t pid_t_err[2];
-  int8_t t_ang;
-  int8_t t_dist;
+  int16_t t_ang;
+  int16_t t_dist;
   int8_t t_adv_a;
   int8_t t_adv_d;
+  int16_t t_x, t_y;
 } logr[PID_LOG_SZ];
 
-#define WALL_LOG_SZ 8
+#define WALL_LOG_SZ 4
 //uint8_t wl_ptr=0;
 struct __attribute__((__packed__)) WallRec {
   //uint8_t idx;
@@ -592,8 +593,9 @@ void PID(uint16_t ctime)
       int8_t err=0, err_d=0;
       last_enc_rate[i]=(uint8_t)((uint16_t)last_enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
       if(pid_cnt>=M_WUP_PID_CNT) { // do not correct for the first cycles - ca 100-200ms(warmup)
-        err = trg_rate[i]-last_enc_rate[i]+t_err[i];
+        //err = trg_rate[i]-last_enc_rate[i]+t_err[i];
         //err = t_rate[i]-last_enc_rate[i]+t_err[i];
+        err = trg_rate[i]-last_enc_rate[i];
         err_d = err-last_err[i];
         int_err[i]=int_err[i]+err;
         int16_t pow=cur_power[i]+((int16_t)err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI+(int16_t)err_d*M_PID_KD)/M_PID_DIV;
@@ -618,7 +620,8 @@ void PID(uint16_t ctime)
   logr[pid_log_ptr].t_adv_a=RADN_TO_GRAD(t_adv_a);
   logr[pid_log_ptr].t_dist=t_dist/100; //cm  
   logr[pid_log_ptr].t_adv_d=t_adv_d/100; //cm 
-    
+  logr[pid_log_ptr].t_x = t_x/100;
+  logr[pid_log_ptr].t_y = t_y/100;  
   logr[pid_log_ptr].cmd_id=cmd_id;
   logr[pid_log_ptr].ctime=ctime;
   logr[pid_log_ptr].pid_log_idx=pid_cnt++;   
@@ -686,6 +689,7 @@ void PrintLogReg(uint8_t i) {
         PrintLogPair(logr[i].pid_log_ierr[0], logr[i].pid_log_ierr[1]);
         PrintLogPair(logr[i].pid_log_pow[0], logr[i].pid_log_pow[1]);
         Serial.print(":");
+        PrintLogPair(logr[i].t_x, logr[i].t_y);
         PrintLogPair(logr[i].t_dist, logr[i].t_adv_d);
         PrintLogPair(logr[i].t_ang, logr[i].t_adv_a);
         PrintLogPair(logr[i].pid_t_err[0], logr[i].pid_t_err[1]);
