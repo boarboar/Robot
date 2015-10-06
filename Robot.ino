@@ -27,6 +27,7 @@ uint16_t isqrt32(uint32_t n);
 //int16_t invsin(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm); 
 //int16_t asin32(int16_t x, uint16_t norm);
 int16_t inva16(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm); 
+void normalize(int16_t *px, int16_t *py, int16_t norm);
 void addJson(const char *name, int16_t value);
 void addJsonArr16_2(const char *name, int16_t v1, int16_t v2);
 
@@ -48,7 +49,6 @@ void addJsonArr16_2(const char *name, int16_t v1, int16_t v2);
 #define US_OUT   P1_7
 
 // common vars 
-//const unsigned int PID_TIMEOUT = 100;
 const unsigned int PID_TIMEOUT_HIGH = 200;
 const unsigned int PID_TIMEOUT_LOW = 100;
 //const unsigned int RESP_TIMEOUT = 90;
@@ -88,14 +88,14 @@ const unsigned int R_F_ISTASKROT=0x16;
 #define F_SETTASKROT() (flags|=(R_F_ISTASK|R_F_ISTASKROT))
 #define F_CLEARTASK() (flags&=~(R_F_ISTASK|R_F_ISTASKMOV|R_F_ISTASKROT))
 
-#define CHGST_TO_MM_10(CNT)  ((int32_t)(CNT)*62832*WHEEL_RAD_MM_10/WHEEL_CHGSTATES/10000)
-
 // tracking
 #define V_NORM 10000
-#define V_NORM_PI 31400
+#define V_NORM_PI 31416
 
 #define RADN_TO_GRAD(R)      ((int32_t)(R)*180/V_NORM_PI)
 #define GRAD_TO_RADN(D)      ((int32_t)(D)*V_NORM_PI/180)
+//#define CHGST_TO_MM_10(CNT)  ((int32_t)(CNT)*62832*WHEEL_RAD_MM_10/WHEEL_CHGSTATES/10000)
+#define CHGST_TO_MM_10(CNT)  ((int32_t)(CNT)*2*V_NORM_PI*WHEEL_RAD_MM_10/WHEEL_CHGSTATES/10000)
 
 // for 7.5v
 #define M_POW_LOWEST_LIM   10
@@ -114,15 +114,25 @@ const unsigned int R_F_ISTASKROT=0x16;
 enum EnumCmd { EnumCmdDrive=1, EnumCmdTest=2, EnumCmdStop=3, EnumCmdLog=4, EnumCmdContinueDrive=5, EnumCmdRst=6, EnumCmdTaskMove=7, EnumCmdTaskRotate=8, EnumCmdWallLog=9};  
 enum EnumError { EnumErrorUnknown=-1, EnumErrorBadSyntax=-2, EnumErrorBadParam=-3, EnumErrorNone=-100};  
 
+struct PosStruct {
+  int16_t nx, ny;    // NORM
+  int32_t x, y;      //in 10thmm - up to 320 cm
+  int32_t angle;        // in nrads
+} ;
+
 struct TaskStruct {
   int32_t target;  // in mm or nrads
+  
   int16_t nx, ny;    // NORM
-  int16_t x, y;      //in 10thmm - up to 320 cm
+  int32_t x, y;      //in 10thmm - up to 320 cm
   int32_t angle;        // in nrads
+  
+  //PosStruct pos;
   int32_t dist;   // in 10th mm
   int16_t adv_d;  // in 10th mm
   int16_t adv_a;  // in nrads
   int16_t bearing;
+  int16_t bearing1;
 } task;
 
 char buf[BUF_SIZE];
@@ -132,62 +142,39 @@ uint8_t bytes = 0;
 uint32_t lastCommandTime; // =lastTaskTime
 uint32_t lastPidTime;
 uint16_t last_dur=0;
+uint8_t cmd_id=0;
 int8_t cmdResult=EnumErrorNone;
+uint8_t cmd_power[2]={0,0}; 
+uint8_t drv_dir[2]={0,0}; 
 
 // parameters
 uint8_t calib_enc_rate_high=0; // target rate (counts per RATE_SAMPLE_PERIOD) for 100 power
 uint8_t calib_enc_rate_low=0; // target rate (counts per RATE_SAMPLE_PERIOD) for low power
-//uint8_t calib_enc_bias_high=0; // bias rate (counts per RATE_SAMPLE_PERIOD) for 100 power
-//uint8_t calib_enc_bias_low=0; // bias rate (counts per RATE_SAMPLE_PERIOD) for low power
 uint8_t pow_low=0;
 uint8_t pow_high=0;
 uint8_t pid_to=0;
-uint8_t cmd_id=0;
 
 // current state 
 uint8_t flags=0; 
 int32_t dist=0;  // in 10thmm
 int16_t diff=0;  // in 10tmm
+
 int32_t x=0, y=0;// in 10thmm
 int16_t nx=0, ny=V_NORM;
 int32_t angle=0; 
+
 uint16_t us_dist=9999; 
 
 // PID section
 uint8_t pid_cnt=0;
-uint8_t drv_dir[2]={0,0}; 
 uint8_t cur_power[2]={0,0}; 
-uint8_t cmd_power[2]={0,0}; 
 uint8_t trg_rate[2]={0,0}; 
 uint8_t last_enc_cnt[2]={0,0}; 
 uint8_t last_enc_rate[2]={0,0}; 
 int8_t last_err[2]={0,0};
 int8_t int_err[2]={0,0};
 int8_t d_err[2]={0,0};
-
-
-/*
-#define PID_LOG_SZ 1
-uint8_t pid_log_ptr=0;
-
-struct __attribute__((__packed__)) LogRec {
-  uint8_t cmd_id;       // ref to cmd id
-  uint8_t pid_log_idx;   
-  uint8_t ctime;         // pid interval 
-  uint8_t ec[2];
-  uint8_t pid_t_rate[2];
-  uint8_t pid_log_rate[2];
-  int8_t pid_log_derr[2];
-  int8_t pid_log_ierr[2];
-  uint8_t pid_log_pow[2];
-  int8_t pid_t_err[2];
-  int16_t t_ang;
-  int16_t t_dist;
-  int8_t t_adv_a;
-  int8_t t_adv_d;
-  int16_t t_x, t_y;
-} logr[PID_LOG_SZ];
-*/
+int8_t t_err[2]={0,0};
 
 #define WALL_LOG_SZ 4
 struct __attribute__((__packed__)) WallRec {
@@ -238,7 +225,6 @@ void setup()
    pow_low+=M_POW_STEP;
   }
   calib_enc_rate_low = (last_enc_cnt[0]+last_enc_cnt[1])/2;
-  //calib_enc_bias_low = last_enc_cnt[1]-last_enc_cnt[0];
  
   pow_high=pow_low+M_POW_STEP;
   while(pow_high<M_POW_HIGH_LIM) {
@@ -251,19 +237,17 @@ void setup()
   }
   
   calib_enc_rate_high = (last_enc_cnt[0]+last_enc_cnt[1])/2;
-  //calib_enc_bias_high = last_enc_cnt[1]-last_enc_cnt[0];
 
   StopDrive();
-  
   digitalWrite(RED_LED, LOW);
-
-//  for(i=0; i<PID_LOG_SZ; i++) logr[i].pid_log_idx=255;
   
   for(i=0; i<WALL_LOG_SZ; i++) logw[i].adv=logw[i].usd=0;
 
   while (Serial.available()) Serial.read();  // eat garbage
   
   lastCommandTime = lastPidTime = millis();  
+  
+  InitPos();
 }
 
 void loop()
@@ -300,10 +284,7 @@ void loop()
       StopDrive();
     } else if(cmdResult==EnumCmdRst) {
       StopDrive();
-      x=y=0;
-      nx=0; ny=V_NORM;
-      dist=diff=0;
-      angle=0;
+      InitPos();
     } 
     else if(cmdResult==EnumCmdTest) { ; }
     else if(cmdResult==EnumCmdTaskMove || cmdResult==EnumCmdTaskRotate) {
@@ -349,17 +330,11 @@ void Notify() {
       addJson("VCC", getVcc());
       addJsonArr16_2("CLB_P_LH", pow_low, pow_high);   
       addJsonArr16_2("CLB_R_LH", calib_enc_rate_low, calib_enc_rate_high);   
-      //addJsonArr16_2("CLB_B_LH", calib_enc_bias_low, calib_enc_bias_high);    
-      //addJsonArr16_2("R", last_enc_rate[0], last_enc_rate[1]);
-      //addJsonArr16_2("EC", last_enc_cnt[0], last_enc_cnt[1]);
       delay(10);
-      //addJson("OVF", (int16_t)(F_ISOVERFLOW()));
       addJsonArr16_2("N", (int16_t)nx, (int16_t)ny); // in normval
       addJsonArr16_2("X", (int16_t)(x/100), (int16_t)(y/100)); // in cm
+      addJson("A", RADN_TO_GRAD(angle)); 
       addJson("U", (int16_t)(us_dist));      
-      //addJson("FT", flags&R_F_ISTASK);
-      //addJson("FM", flags&R_F_ISTASKMOV);
-      //addJson("FR", flags&R_F_ISTASKROT);
       delay(10);
       addJson("TG", task.target);
       addJsonArr16_2("TN", (int16_t)task.nx, (int16_t)task.ny); // in normval
@@ -368,13 +343,6 @@ void Notify() {
       addJsonArr16_2("TA", RADN_TO_GRAD(task.angle), RADN_TO_GRAD(task.adv_a)); // in deg
       addJson("L", last_dur); 
       break;
-      /*
-    case EnumCmdLog: {
-      PrintLogRecs();
-      break;
-    }
-    */
-    
     case EnumCmdWallLog: {
       Serial.print("\"LOGW\":\""); 
       for(uint8_t i=WALL_LOG_SZ; i>0; i--) { 
@@ -384,12 +352,19 @@ void Notify() {
       Serial.print("\",");
       break;
     }
-
     case EnumCmdTaskMove:       
     case EnumCmdTaskRotate:           
       addJson("FT", flags&R_F_ISTASK);
       addJson("FM", flags&R_F_ISTASKMOV);
       addJson("TG", task.target);
+      if(F_ISTASKMOV()) {
+        int32_t tx, ty;
+        tx=x+(int32_t)nx*(task.target)/V_NORM*10; //10th mm
+        ty=y+(int32_t)ny*(task.target)/V_NORM*10; //10th mm
+        addJsonArr16_2("TABSX", tx/100, ty/100); // absolute, in cm        
+      } else {
+        addJson("TABSA", RADN_TO_GRAD(angle+task.angle)); // absolute
+      }
       break;
     default:;
    }
@@ -423,13 +398,19 @@ void readUSDist() {
   }
 }
 
+void InitPos() { 
+  x=y=0;
+  nx=0; ny=V_NORM;
+  dist=diff=0;
+  angle=0;
+}      
+      
 void StartDrive() 
 {
   for(int i=0; i<2; i++) {
     if(drv_dir[i]) {
        cur_power[i]=cmd_power[i];
        if(cur_power[i]>pow_high) cur_power[i]=pow_high;
-       //trg_rate[i]=map(cur_power[i], pow_low, pow_high, calib_enc_rate_low+calib_enc_bias_low*(1-i*2)/2, calib_enc_rate_high+calib_enc_bias_high*(1-i*2)/2);
        trg_rate[i]=map(cur_power[i], pow_low, pow_high, calib_enc_rate_low, calib_enc_rate_high);
      } else {
        trg_rate[i]=0;
@@ -448,8 +429,7 @@ void StartDrive()
   
   pid_cnt=0;
   //pid_log_ptr=0;
-  
-  
+   
   pid_to = PID_TIMEOUT_HIGH;
   lastPidTime=millis(); 
 }
@@ -463,7 +443,6 @@ void StopDrive()
   last_enc_rate[0]=last_enc_rate[1]=0;
   cur_power[0]=cur_power[1]=0;
   last_dur=millis()-lastCommandTime;
-  //us_wall_cnt=0;
 }
 
 void StartTask() 
@@ -498,7 +477,6 @@ boolean TrackTask()
     return (task.dist+task.adv_d)/10>=task.target; //mm
   }
   else {
-    // test. use global angle. So do this only after Reset !!!
     if(task.target>0) { //clockwise
       if((task.angle+2*task.adv_a)>=task.target) pid_to = PID_TIMEOUT_LOW;
       return task.angle+task.adv_a>=task.target;
@@ -530,35 +508,52 @@ void ReadEnc()
     df = CHGST_TO_MM_10(s[0]-s[1]); // in 10th mm
     dist+=dd/2; // drive distance, 10th mm
     diff+=df; // drive diff, 10th mm 
+    
     tx=-ny; ty=nx;     
     tx += (int32_t)nx*df/WHEEL_BASE_MM_10;
     ty += (int32_t)ny*df/WHEEL_BASE_MM_10;
+    /*
     tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
     tx=(int32_t)tx*V_NORM/tl;  
     ty=(int32_t)ty*V_NORM/tl;
-    angle += inva16(nx, ny, ty, -tx, V_NORM); //angle from vector product
+    */
+    normalize(&tx, &ty, V_NORM);
+    tl = inva16(nx, ny, ty, -tx, V_NORM); //angle from vector product
+    //angle += inva16(nx, ny, ty, -tx, V_NORM); //angle from vector product
     nx=ty; ny=-tx;
     x+=(int32_t)nx*dd/(2*V_NORM); // in 10th mm
     y+=(int32_t)ny*dd/(2*V_NORM); // in 10th mm
+    angle += tl;
+    
     // task vars
     task.dist += dd/2; // in 10th mm
     task.adv_d = dd/2; // in 10th mm
+    task.adv_a = tl;
+    task.angle += tl;
+    
+    //task.adv_a = inva16(task.nx, task.ny, ty, -tx, V_NORM); //angle from vector product
+    //task.angle += task.adv_a;
+    
     tx=-task.ny; ty=task.nx;     
     tx += (int32_t)task.nx*df/WHEEL_BASE_MM_10;
     ty += (int32_t)task.ny*df/WHEEL_BASE_MM_10;
+    /*
     tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
     tx=(int32_t)tx*V_NORM/tl;  
-    ty=(int32_t)ty*V_NORM/tl;
-    
-    task.adv_a = inva16(task.nx, task.ny, ty, -tx, V_NORM); //angle from vector product
-    task.angle += task.adv_a;
+    ty=(int32_t)ty*V_NORM/tl;  
+    */
+    normalize(&tx, &ty, V_NORM);
     task.nx=ty; task.ny=-tx;
     task.x+=(int32_t)task.nx*dd/(2*V_NORM); // in 10th mm
     task.y+=(int32_t)task.ny*dd/(2*V_NORM); // in 10th mm
+    
     tx=-task.x/10; ty=task.target-task.y/10; // in mm
+    /*
     tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty); // vector to destination
     tx=(int32_t)tx*V_NORM/tl;  
     ty=(int32_t)ty*V_NORM/tl;
+    */
+    normalize(&tx, &ty, V_NORM);
     task.bearing = inva16(task.nx, task.ny, tx, ty, V_NORM); //angle from vector product
   }
 }
@@ -566,44 +561,23 @@ void ReadEnc()
 void PID(uint16_t ctime)
 {
   if(ctime>0) {
-    //int16_t task_progress;
-    //uint8_t task_incr;    
-    //uint8_t t_rate[2];
     uint8_t i;
-    //int8_t t_err[2];
-    //t_rate[0]=trg_rate[0]; t_rate[1]=trg_rate[1];
-    //t_err[0]=t_err[1]=0;
-    
+    t_err[0]=t_err[1]=0;   
     if(F_ISTASKANY()) {      
       if(F_ISTASKMOV()) {
-        /*
-        int8_t task_err=t_x/100; //cm
+        int8_t task_err=task.bearing/10;
         if(task_err>1) task_err=1;
-        else if (task_err<-1) task_err=-1;
-        else task_err=0; 
-        t_err[0]=-task_err;
-        t_err[1]=task_err;
-        */
-        /*
-        task_incr=calib_enc_rate_high-calib_enc_rate_low;
-        task_progress=t_y/10; // mm
-        for(i=0; i<2; i++) {
-          if(task_progress<task_target/2) t_rate[i] = t_rate[i] + (uint32_t)task_incr*task_progress*2/task_target; //0..1
-          else {
-            t_rate[i] = t_rate[i] + (uint32_t)task_incr*2*(task_target-task_progress)/task_target; //1..0
-          }
-        } */
+        t_err[0]=task_err;
+        t_err[1]=-task_err;
       } else { // rotate
       }     
     }
-
     for(i=0; i<2; i++) {
       //int8_t err=0, err_d=0;
       int8_t err=0;
       last_enc_rate[i]=(uint8_t)((uint16_t)last_enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
       if(pid_cnt>=M_WUP_PID_CNT) { // do not correct for the first cycles - ca 100-200ms(warmup)
-        //err = trg_rate[i]-last_enc_rate[i]+t_err[i];
-        //err = t_rate[i]-last_enc_rate[i]+t_err[i];
+        //err = (trg_rate[i]-last_enc_rate[i])+t_err[i];
         err = trg_rate[i]-last_enc_rate[i];
         d_err[i] = err-last_err[i];
         int_err[i]=int_err[i]+err;
@@ -614,35 +588,7 @@ void PID(uint16_t ctime)
         cur_power[i]=pow;
       }
       last_err[i]=err;
-      /*
-      // log entry
-      logr[pid_log_ptr].ec[i]=last_enc_cnt[i];
-      //logr[pid_log_ptr].pid_t_rate[i]=t_rate[i];
-      logr[pid_log_ptr].pid_t_rate[i]=trg_rate[i];
-      logr[pid_log_ptr].pid_log_rate[i]=last_enc_rate[i];
-      logr[pid_log_ptr].pid_log_derr[i]=err_d;
-      logr[pid_log_ptr].pid_log_ierr[i]=int_err[i];
-      logr[pid_log_ptr].pid_log_pow[i]=cur_power[i];      
-      logr[pid_log_ptr].pid_t_err[i]=t_err[i];  // cm
-      */
     } 
-      
-  // log entry  
-  /*
-  logr[pid_log_ptr].t_ang=RADN_TO_GRAD(t_ang);  
-  logr[pid_log_ptr].t_adv_a=RADN_TO_GRAD(t_adv_a);
-  logr[pid_log_ptr].t_dist=t_dist/100; //cm  
-  logr[pid_log_ptr].t_adv_d=t_adv_d/100; //cm 
-  logr[pid_log_ptr].t_x = t_x/100;
-  logr[pid_log_ptr].t_y = t_y/100;  
-  logr[pid_log_ptr].cmd_id=cmd_id;
-  logr[pid_log_ptr].ctime=ctime;
-  
-  logr[pid_log_ptr].pid_log_idx=pid_cnt;   
-  Serial.print("@LP:"); PrintLogReg(pid_log_ptr); Serial.println();  
-  // log advance/wrap  
-  if(++pid_log_ptr>=PID_LOG_SZ) pid_log_ptr=0;        
-  */
   PrintLogToSerial(ctime);
   pid_cnt++;
   }
@@ -669,53 +615,6 @@ void Drive_s(uint8_t dir, uint8_t pow, int16_t p_en, uint8_t p1, uint8_t p2)
   analogWrite(p_en, pow);
 }
 
-/*
-void PrintLogRecs() {
-    uint8_t i;
-    uint8_t last_cmd_id=0;
-    uint8_t first_idx=255;
-    uint8_t start_pos=0;
-    for(i=0; i<PID_LOG_SZ; i++) {
-      if(logr[i].pid_log_idx!=255 && logr[i].cmd_id>last_cmd_id) last_cmd_id=logr[i].cmd_id;
-    }
-    for(i=0; i<PID_LOG_SZ; i++) {
-      if(logr[i].pid_log_idx!=255 && logr[i].cmd_id==last_cmd_id && logr[i].pid_log_idx<first_idx) {first_idx=logr[i].pid_log_idx; start_pos=i; }
-    }
-    Serial.print("\"LOGR\":\"");             
-    i=start_pos;
-    if(last_cmd_id) do {
-        PrintLogReg(i);
-        Serial.print(";"); 
-        delay(10);
-        if(++i>=PID_LOG_SZ) i=0;
-        
-    } while(i!=start_pos && logr[i].pid_log_idx!=255 && logr[i].cmd_id==last_cmd_id);
-    
-   for(i=0; i<PID_LOG_SZ; i++) logr[i].pid_log_idx=255; // cleanup
-   Serial.print("\",");
-   pid_cnt=0;
-   pid_log_ptr=0;
-}
-
-
-void PrintLogReg(uint8_t i) {
-        PrintLog(logr[i].pid_log_idx); PrintLog(logr[i].cmd_id); PrintLog(logr[i].ctime);
-        PrintLogPair(logr[i].ec[0], logr[i].ec[1]); 
-        PrintLogPair(logr[i].pid_t_rate[0], logr[i].pid_t_rate[1]);
-        PrintLogPair(logr[i].pid_log_rate[0], logr[i].pid_log_rate[1]);
-        PrintLogPair(trg_rate[0]-logr[i].pid_log_rate[0], trg_rate[1]-logr[i].pid_log_rate[1]);
-        PrintLogPair(logr[i].pid_log_derr[0], logr[i].pid_log_derr[1]);
-        PrintLogPair(logr[i].pid_log_ierr[0], logr[i].pid_log_ierr[1]);
-        PrintLogPair(logr[i].pid_log_pow[0], logr[i].pid_log_pow[1]);
-        Serial.print(":");
-        PrintLogPair(logr[i].t_x, logr[i].t_y);
-        PrintLogPair(logr[i].t_dist, logr[i].t_adv_d);
-        PrintLogPair(logr[i].t_ang, logr[i].t_adv_a);
-        PrintLogPair(logr[i].pid_t_err[0], logr[i].pid_t_err[1]);
- 
-}
-*/
-
 void PrintLogToSerial(uint16_t ctime) {
   Serial.print("@LP:"); 
   PrintLog(cmd_id); PrintLog(ctime);
@@ -731,6 +630,7 @@ void PrintLogToSerial(uint16_t ctime) {
   PrintLogPair(task.dist/100, task.adv_d/100); //in cm
   PrintLogPair(RADN_TO_GRAD(task.angle), RADN_TO_GRAD(task.adv_a));
   PrintLog(RADN_TO_GRAD(task.bearing));
+  PrintLogPair(t_err[0], t_err[1]);
   Serial.println(); 
 }
 
