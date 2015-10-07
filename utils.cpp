@@ -1,4 +1,4 @@
-#include <Energia.h>
+#include "utils.h"
 
 uint8_t Match(char *buf, uint8_t bytes, const char *cmd) 
 {
@@ -58,27 +58,28 @@ int32_t isin32d(int32_t xd)  // xd: -180...180; D=100
     return yd;
 }
 
-int16_t invsin(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm) 
+int16_t invsin(int16_t ax, int16_t ay, int16_t bx, int16_t by) 
 {
-  return -((int32_t)ax*by-(int32_t)ay*bx)/norm;
+  return -((int32_t)ax*by-(int32_t)ay*bx)/V_NORM;
 }
-  
-int16_t asin32(int16_t x, uint16_t norm) // xd: -norm..norm 
+  /*
+int16_t asin32(int16_t x) // xd: -norm..norm 
 {
-  return (int32_t)x+(int32_t)(((x*x)/norm)*x)/(6*norm);
+  return (int16_t)((int32_t)x+(int32_t)((((int32_t)x*x)/V_NORM)*x)/(6*V_NORM));
+}
+*/
+
+int16_t inva16(int16_t ax, int16_t ay, int16_t bx, int16_t by) 
+{
+  int32_t x = ((int32_t)ay*bx-(int32_t)ax*by)/V_NORM;
+  return (int16_t)(x+(((x*x)/V_NORM)*x)/(6*V_NORM));
 }
 
-int16_t inva16(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm) 
-{
-  int32_t x = ((int32_t)ay*bx-(int32_t)ax*by)/norm;
-  return (int32_t)x+(int32_t)(((x*x)/norm)*x)/(6*norm);
-}
-
-void normalize(int16_t *px, int16_t *py, int16_t norm) {  
+void normalize(int16_t *px, int16_t *py) {  
   int16_t x=*px, y=*py;
   int16_t tl=isqrt32((int32_t)x*x+(int32_t)y*y);
-  *px=(int32_t)x*norm/tl;  
-  *py=(int32_t)y*norm/tl;
+  *px=(int32_t)x*V_NORM/tl;  
+  *py=(int32_t)y*V_NORM/tl;
 }
 
 void addJson(const char *name, int16_t value) {

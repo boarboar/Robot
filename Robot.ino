@@ -19,17 +19,7 @@
 //    NOT_ON_TIMER /* 15 - P1.7 */
 
 // Besides, the different pins for the separate analogwrite channels should be on the separate timer+compare 
-
-uint8_t Match(char *buf, uint8_t bytes, const char *cmd); 
-uint8_t bctoi(char *buf, uint8_t index, int16_t *val); 
-int32_t isin32d(int32_t xd);
-uint16_t isqrt32(uint32_t n);  
-//int16_t invsin(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm); 
-//int16_t asin32(int16_t x, uint16_t norm);
-int16_t inva16(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm); 
-void normalize(int16_t *px, int16_t *py, int16_t norm);
-void addJson(const char *name, int16_t value);
-void addJsonArr16_2(const char *name, int16_t v1, int16_t v2);
+#include "utils.h"
 
 #define TTY_SPEED 38400
 //#define TTY_SPEED 9600
@@ -89,13 +79,10 @@ const unsigned int R_F_ISTASKROT=0x16;
 #define F_CLEARTASK() (flags&=~(R_F_ISTASK|R_F_ISTASKMOV|R_F_ISTASKROT))
 
 // tracking
-#define V_NORM 10000
-#define V_NORM_PI 31416
 
-#define RADN_TO_GRAD(R)      ((int32_t)(R)*180/V_NORM_PI)
-#define GRAD_TO_RADN(D)      ((int32_t)(D)*V_NORM_PI/180)
 //#define CHGST_TO_MM_10(CNT)  ((int32_t)(CNT)*62832*WHEEL_RAD_MM_10/WHEEL_CHGSTATES/10000)
-#define CHGST_TO_MM_10(CNT)  ((int32_t)(CNT)*2*V_NORM_PI*WHEEL_RAD_MM_10/WHEEL_CHGSTATES/10000)
+//#define CHGST_TO_MM_10(CNT)  ((int32_t)(CNT)*2*V_NORM_PI*WHEEL_RAD_MM_10/WHEEL_CHGSTATES/10000)
+#define CHGST_TO_MM_10(CNT)  ((int32_t)(CNT)*V_NORM_PI2*WHEEL_RAD_MM_10/WHEEL_CHGSTATES/10000)
 
 // for 7.5v
 #define M_POW_LOWEST_LIM   10
@@ -126,13 +113,14 @@ struct TaskStruct {
   int16_t nx, ny;    // NORM
   int32_t x, y;      //in 10thmm - up to 320 cm
   int32_t angle;        // in nrads
+  int32_t x_abs, y_abs;      //in 10thmm - up to 320 cm
   
   //PosStruct pos;
   int32_t dist;   // in 10th mm
   int16_t adv_d;  // in 10th mm
   int16_t adv_a;  // in nrads
   int16_t bearing;
-  int16_t bearing1;
+  int16_t bearing_abs;
 } task;
 
 char buf[BUF_SIZE];
@@ -172,7 +160,7 @@ uint8_t trg_rate[2]={0,0};
 uint8_t last_enc_cnt[2]={0,0}; 
 uint8_t last_enc_rate[2]={0,0}; 
 int8_t last_err[2]={0,0};
-int8_t int_err[2]={0,0};
+int16_t int_err[2]={0,0};
 int8_t d_err[2]={0,0};
 int8_t t_err[2]={0,0};
 
@@ -358,12 +346,9 @@ void Notify() {
       addJson("FM", flags&R_F_ISTASKMOV);
       addJson("TG", task.target);
       if(F_ISTASKMOV()) {
-        int32_t tx, ty;
-        tx=x+(int32_t)nx*(task.target)/V_NORM*10; //10th mm
-        ty=y+(int32_t)ny*(task.target)/V_NORM*10; //10th mm
-        addJsonArr16_2("TABSX", tx/100, ty/100); // absolute, in cm        
+        addJsonArr16_2("TABSX", task.x_abs/100, task.y_abs/100); // absolute, in cm        
       } else {
-        addJson("TABSA", RADN_TO_GRAD(angle+task.angle)); // absolute
+        addJson("TABSA", RADN_TO_GRAD(angle+task.target)); // absolute
       }
       break;
     default:;
@@ -453,6 +438,8 @@ void StartTask()
   if(F_ISTASKMOV()) { 
     cmd_power[0]=cmd_power[1]=(pow_low+pow_high)/2;  
     drv_dir[0]=drv_dir[1]=1;
+    task.x_abs=x+(int32_t)nx*(task.target)/V_NORM*10; //10th mm
+    task.y_abs=y+(int32_t)ny*(task.target)/V_NORM*10; //10th mm
   } else { // rot
     cmd_power[0]=cmd_power[1]=pow_low;  
     if(task.target>0) { // clockwise
@@ -512,49 +499,37 @@ void ReadEnc()
     tx=-ny; ty=nx;     
     tx += (int32_t)nx*df/WHEEL_BASE_MM_10;
     ty += (int32_t)ny*df/WHEEL_BASE_MM_10;
-    /*
-    tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
-    tx=(int32_t)tx*V_NORM/tl;  
-    ty=(int32_t)ty*V_NORM/tl;
-    */
-    normalize(&tx, &ty, V_NORM);
-    tl = inva16(nx, ny, ty, -tx, V_NORM); //angle from vector product
-    //angle += inva16(nx, ny, ty, -tx, V_NORM); //angle from vector product
+    normalize(&tx, &ty);
+    tl = inva16(nx, ny, ty, -tx); //angle from vector product
     nx=ty; ny=-tx;
     x+=(int32_t)nx*dd/(2*V_NORM); // in 10th mm
     y+=(int32_t)ny*dd/(2*V_NORM); // in 10th mm
-    angle += tl;
+    //angle += tl;
+    angle = (angle+tl)%V_NORM_PI2;
     
     // task vars
     task.dist += dd/2; // in 10th mm
     task.adv_d = dd/2; // in 10th mm
     task.adv_a = tl;
     task.angle += tl;
-    
-    //task.adv_a = inva16(task.nx, task.ny, ty, -tx, V_NORM); //angle from vector product
-    //task.angle += task.adv_a;
-    
+ 
+    tx=(task.x_abs-x)/10; ty=(task.y_abs-y)/10; // in mm
+    normalize(&tx, &ty);
+    task.bearing_abs = inva16(nx, ny, tx, ty); //angle from vector product
+        
     tx=-task.ny; ty=task.nx;     
     tx += (int32_t)task.nx*df/WHEEL_BASE_MM_10;
     ty += (int32_t)task.ny*df/WHEEL_BASE_MM_10;
-    /*
-    tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty);
-    tx=(int32_t)tx*V_NORM/tl;  
-    ty=(int32_t)ty*V_NORM/tl;  
-    */
-    normalize(&tx, &ty, V_NORM);
+    normalize(&tx, &ty);
     task.nx=ty; task.ny=-tx;
     task.x+=(int32_t)task.nx*dd/(2*V_NORM); // in 10th mm
     task.y+=(int32_t)task.ny*dd/(2*V_NORM); // in 10th mm
     
     tx=-task.x/10; ty=task.target-task.y/10; // in mm
-    /*
-    tl=isqrt32((int32_t)tx*tx+(int32_t)ty*ty); // vector to destination
-    tx=(int32_t)tx*V_NORM/tl;  
-    ty=(int32_t)ty*V_NORM/tl;
-    */
-    normalize(&tx, &ty, V_NORM);
-    task.bearing = inva16(task.nx, task.ny, tx, ty, V_NORM); //angle from vector product
+    normalize(&tx, &ty);
+    task.bearing = inva16(task.nx, task.ny, tx, ty); //angle from vector product
+    
+    
   }
 }
 
@@ -565,8 +540,9 @@ void PID(uint16_t ctime)
     t_err[0]=t_err[1]=0;   
     if(F_ISTASKANY()) {      
       if(F_ISTASKMOV()) {
-        int8_t task_err=task.bearing/10;
+        int8_t task_err=RADN_TO_GRAD(task.bearing)/10;
         if(task_err>1) task_err=1;
+        if(task_err<-1) task_err=-1;
         t_err[0]=task_err;
         t_err[1]=-task_err;
       } else { // rotate
@@ -629,7 +605,8 @@ void PrintLogToSerial(uint16_t ctime) {
   PrintLogPair(task.x/100, task.y/100); //in cm
   PrintLogPair(task.dist/100, task.adv_d/100); //in cm
   PrintLogPair(RADN_TO_GRAD(task.angle), RADN_TO_GRAD(task.adv_a));
-  PrintLog(RADN_TO_GRAD(task.bearing));
+  //PrintLog(RADN_TO_GRAD(task.bearing));
+  PrintLogPair(RADN_TO_GRAD(task.bearing), RADN_TO_GRAD(task.bearing_abs));
   PrintLogPair(t_err[0], t_err[1]);
   Serial.println(); 
 }
