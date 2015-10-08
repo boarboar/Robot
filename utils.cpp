@@ -62,12 +62,27 @@ int16_t invsin(int16_t ax, int16_t ay, int16_t bx, int16_t by)
 {
   return -((int32_t)ax*by-(int32_t)ay*bx)/V_NORM;
 }
-  /*
+  
 int16_t asin32(int16_t x) // xd: -norm..norm 
 {
   return (int16_t)((int32_t)x+(int32_t)((((int32_t)x*x)/V_NORM)*x)/(6*V_NORM));
 }
-*/
+
+int16_t asin32x(int16_t s) // xd: -norm..norm 
+{
+  uint8_t f=0;
+  int32_t x=s;
+  if(x<-V_NORM || x>V_NORM) return 0;
+  if(x<0) { x=-x; f |= 0x01;}
+  if(x>V_NORM_PI_4) { // as cos
+    x=isqrt32((int32_t)V_NORM*V_NORM-x*x);
+    f |= 0x02;
+  }		
+  x=(x+(((x*x)/V_NORM)*x)/(6*V_NORM));
+  if(f & 0x02) x= (int32_t)V_NORM_PI_4-x;		
+  if(f & 0x01) x= -x;			
+  return (int16_t)x;
+}
 
 int16_t inva16(int16_t ax, int16_t ay, int16_t bx, int16_t by) 
 {

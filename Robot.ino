@@ -606,6 +606,11 @@ void PrintLogToSerial(uint16_t ctime) {
   PrintLogPair(task.dist/100, task.adv_d/100); //in cm
   PrintLogPair(RADN_TO_GRAD(task.angle), RADN_TO_GRAD(task.adv_a));
   //PrintLog(RADN_TO_GRAD(task.bearing));
+  int16_t tx, ty;
+  tx=-task.x/10; ty=task.target-task.y/10; // in mm
+  normalize(&tx, &ty);
+  PrintLogPair(task.nx, task.ny); 
+  PrintLogPair(tx, ty); 
   PrintLogPair(RADN_TO_GRAD(task.bearing), RADN_TO_GRAD(task.bearing_abs));
   PrintLogPair(t_err[0], t_err[1]);
   Serial.println(); 
