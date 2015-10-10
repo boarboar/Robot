@@ -84,6 +84,7 @@ int16_t asin32x(int16_t s) // xd: -norm..norm
   return (int16_t)x;
 }
 */
+/*
 int16_t asin32(int16_t x) // xd: -norm..norm 
 {
   int32_t x1=x;
@@ -94,12 +95,14 @@ int16_t asin32(int16_t x) // xd: -norm..norm
   return x1+x;
   //return (int16_t)((int32_t)x+(int32_t)((((int32_t)x*x)/V_NORM)*x)/(6*V_NORM));
 }
+*/
 
-int16_t asin32x(int16_t s) // xd: -norm..norm 
+int16_t asin32(int16_t s) // xd: -norm..norm 
 {
   uint8_t f=0;
   int32_t x=s;
-  if(x<-V_NORM || x>V_NORM) return 0;
+  if(x<-V_NORM) return -V_NORM_PI_2;
+  if(x>V_NORM) return V_NORM_PI_2;
   if(x<0) { x=-x; f |= 0x01;}
   if(x>V_NORM_PI_4) { // as cos
     x=isqrt32((int32_t)V_NORM*V_NORM-x*x);
@@ -112,7 +115,7 @@ int16_t asin32x(int16_t s) // xd: -norm..norm
   x1*=(int32_t)x;
   x1/=(int32_t)6L*V_NORM;
   x1+=(int32_t)x;
-  if(f & 0x02) x1= (int32_t)V_NORM_PI_4-x1;		
+  if(f & 0x02) x1= (int32_t)V_NORM_PI_2-x1;		
   if(f & 0x01) x1= -x1;			
   return (int16_t)x1;
 }
