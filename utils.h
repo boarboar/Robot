@@ -14,7 +14,7 @@ uint8_t bctoi(char *buf, uint8_t index, int16_t *val);
 int32_t isin32d(int32_t xd);
 uint16_t isqrt32(uint32_t n);  
 //int16_t invsin(int16_t ax, int16_t ay, int16_t bx, int16_t by, uint16_t norm); 
-int16_t asin32(int16_t x);
+int16_t asin16(int16_t x);
 //int16_t asin32x(int16_t x);
 int16_t inva16(int16_t ax, int16_t ay, int16_t bx, int16_t by); 
 void normalize(int16_t *px, int16_t *py);

@@ -97,7 +97,7 @@ int16_t asin32(int16_t x) // xd: -norm..norm
 }
 */
 
-int16_t asin32(int16_t s) // xd: -norm..norm 
+int16_t asin16(int16_t s) // xd: -norm..norm 
 {
   uint8_t f=0;
   int32_t x=s;
@@ -122,8 +122,10 @@ int16_t asin32(int16_t s) // xd: -norm..norm
 
 int16_t inva16(int16_t ax, int16_t ay, int16_t bx, int16_t by) 
 {
-  int32_t x = ((int32_t)ay*bx-(int32_t)ax*by)/V_NORM;
-  return (int16_t)(x+(((x*x)/V_NORM)*x)/(6*V_NORM));
+  //int32_t x = ((int32_t)ay*bx-(int32_t)ax*by)/V_NORM;
+  //return (int16_t)(x+(((x*x)/V_NORM)*x)/(6*V_NORM));
+  int16_t x=(int16_t)(((int32_t)ay*bx-(int32_t)ax*by)/V_NORM);
+  return asin16(x);
 }
 
 void normalize(int16_t *px, int16_t *py) {  
