@@ -80,8 +80,6 @@ const unsigned int R_F_ISTASKROT=0x16;
 
 // tracking
 
-//#define CHGST_TO_MM_10(CNT)  ((int32_t)(CNT)*62832*WHEEL_RAD_MM_10/WHEEL_CHGSTATES/10000)
-//#define CHGST_TO_MM_10(CNT)  ((int32_t)(CNT)*2*V_NORM_PI*WHEEL_RAD_MM_10/WHEEL_CHGSTATES/10000)
 #define CHGST_TO_MM_10(CNT)  ((int32_t)(CNT)*V_NORM_PI2*WHEEL_RAD_MM_10/WHEEL_CHGSTATES/10000)
 
 // for 7.5v
@@ -91,10 +89,11 @@ const unsigned int R_F_ISTASKROT=0x16;
 #define M_POW_STEP 2
 
 #define M_PID_KP   2
-#define M_PID_KI   0
+#define M_PID_KI   1
 #define M_PID_KD   2
 //#define M_PID_KT   1 // task err
 #define M_PID_DIV  4
+#define M_PID_KI_DIV  10
 
 #define BUF_SIZE 16
 
@@ -110,16 +109,15 @@ struct PosStruct {
 struct TaskStruct {
   int32_t target;  // in mm or nrads
   
-  int16_t nx, ny;    // NORM
-  int32_t x, y;      //in 10thmm - up to 320 cm
+  //int16_t nx, ny;    // NORM
+  //int32_t x, y;      //in 10thmm - up to 320 cm
   int32_t angle;        // in nrads
   int32_t x_abs, y_abs;      //in 10thmm - up to 320 cm
   
-  //PosStruct pos;
   int32_t dist;   // in 10th mm
   int16_t adv_d;  // in 10th mm
   int16_t adv_a;  // in nrads
-  int16_t bearing;
+  //int16_t bearing;
   int16_t bearing_abs;
 } task;
 
@@ -235,6 +233,8 @@ void setup()
   
   lastCommandTime = lastPidTime = millis();  
   
+  delay(RATE_SAMPLE_PERIOD*2); // let it stop
+  
   InitPos();
 }
 
@@ -325,8 +325,9 @@ void Notify() {
       addJson("U", (int16_t)(us_dist));      
       delay(10);
       addJson("TG", task.target);
-      addJsonArr16_2("TN", (int16_t)task.nx, (int16_t)task.ny); // in normval
-      addJsonArr16_2("TX", (int16_t)(task.x/100), (int16_t)(task.y/100)); // in cm
+      //addJsonArr16_2("TN", (int16_t)task.nx, (int16_t)task.ny); // in normval
+      //addJsonArr16_2("TX", (int16_t)(task.x/100), (int16_t)(task.y/100)); // in cm
+      addJsonArr16_2("DX", (int16_t)((task.x_abs-x)/100), (int16_t)((task.y_abs-y)/100)); // in cm
       addJsonArr16_2("TD", (int16_t)(task.dist/100), (int16_t)(task.adv_d/100)); // in cm 
       addJsonArr16_2("TA", RADN_TO_GRAD(task.angle), RADN_TO_GRAD(task.adv_a)); // in deg
       addJson("L", last_dur); 
@@ -410,11 +411,8 @@ void StartDrive()
   {
     F_SETDRIVE();
     digitalWrite(RED_LED, HIGH);
-  }        
-  
+  }          
   pid_cnt=0;
-  //pid_log_ptr=0;
-   
   pid_to = PID_TIMEOUT_HIGH;
   lastPidTime=millis(); 
 }
@@ -432,8 +430,9 @@ void StopDrive()
 
 void StartTask() 
 {
-  task.nx=0; task.ny=V_NORM;
-  task.x=task.y=0; task.angle=task.dist=task.adv_d=task.adv_a=0;
+  //task.nx=0; task.ny=V_NORM;
+  //task.x=task.y=0; 
+  task.angle=task.dist=task.adv_d=task.adv_a=0;
   
   if(F_ISTASKMOV()) { 
     cmd_power[0]=cmd_power[1]=(pow_low+pow_high)/2;  
@@ -516,7 +515,7 @@ void ReadEnc()
     tx=(task.x_abs-x)/10; ty=(task.y_abs-y)/10; // in mm
     normalize(&tx, &ty);
     task.bearing_abs = inva16(nx, ny, tx, ty); //angle from vector product
-        
+        /*
     tx=-task.ny; ty=task.nx;     
     tx += (int32_t)task.nx*df/WHEEL_BASE_MM_10;
     ty += (int32_t)task.ny*df/WHEEL_BASE_MM_10;
@@ -528,7 +527,7 @@ void ReadEnc()
     tx=-task.x/10; ty=task.target-task.y/10; // in mm
     normalize(&tx, &ty);
     task.bearing = inva16(task.nx, task.ny, tx, ty); //angle from vector product
-    
+    */
     
   }
 }
@@ -540,7 +539,7 @@ void PID(uint16_t ctime)
     t_err[0]=t_err[1]=0;   
     if(F_ISTASKANY()) {      
       if(F_ISTASKMOV()) {
-        int8_t task_err=RADN_TO_GRAD(task.bearing)/10;
+        int8_t task_err=RADN_TO_GRAD(task.bearing_abs)/10;
         if(task_err>1) task_err=1;
         if(task_err<-1) task_err=-1;
         t_err[0]=task_err;
@@ -557,7 +556,7 @@ void PID(uint16_t ctime)
         err = trg_rate[i]-last_enc_rate[i];
         d_err[i] = err-last_err[i];
         int_err[i]=int_err[i]+err;
-        int16_t pow=cur_power[i]+((int16_t)err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI+(int16_t)d_err[i]*M_PID_KD)/M_PID_DIV;
+        int16_t pow=cur_power[i]+((int16_t)err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI/M_PID_KI_DIV+(int16_t)d_err[i]*M_PID_KD)/M_PID_DIV;
         if(pow<0) pow=0;
         if(pow>M_POW_MAX) pow=M_POW_MAX;
         if(cur_power[i]!=pow) analogWrite(i==0 ? M1_EN : M2_EN , pow); 
@@ -599,19 +598,22 @@ void PrintLogToSerial(uint16_t ctime) {
   PrintLogPair(last_enc_rate[0], last_enc_rate[1]);
   PrintLogPair(trg_rate[0]-last_enc_rate[0], trg_rate[1]-last_enc_rate[1]);
   PrintLogPair(d_err[0], d_err[1]);
-  PrintLogPair(int_err[0], int_err[1]);
+  PrintLogPair(int_err[0]/M_PID_KI_DIV, int_err[1]/M_PID_KI_DIV);
   PrintLogPair(cur_power[0], cur_power[1]);
   Serial.print(":");
-  PrintLogPair(task.x/100, task.y/100); //in cm
+  //PrintLogPair(task.x/100, task.y/100); //in cm
+  PrintLogPair((task.x_abs-x)/100, (task.y_abs-y)/100); //in cm
   PrintLogPair(task.dist/100, task.adv_d/100); //in cm
   PrintLogPair(RADN_TO_GRAD(task.angle), RADN_TO_GRAD(task.adv_a));
-  //PrintLog(RADN_TO_GRAD(task.bearing));
+  PrintLog(RADN_TO_GRAD(task.bearing_abs));
+  /*
   int16_t tx, ty;
   tx=-task.x/10; ty=task.target-task.y/10; // in mm
   normalize(&tx, &ty);
   PrintLogPair(task.nx, task.ny); 
   PrintLogPair(tx, ty); 
   PrintLogPair(RADN_TO_GRAD(task.bearing), RADN_TO_GRAD(task.bearing_abs));
+  */
   PrintLogPair(t_err[0], t_err[1]);
   Serial.println(); 
 }
