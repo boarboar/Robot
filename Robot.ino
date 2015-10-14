@@ -1,42 +1,7 @@
-// TODO
-// 
-// do not start moving fwd on US condition
-// UI - distance on arrow
 
-//    NOT_ON_TIMER, /*  2 - P1.0 */
-//    T0A0,         /*  3 - P1.1, note: A0 output cannot be used with analogWrite */
-//    T0A1,         /*  4 - P1.2 */
-//    NOT_ON_TIMER, /*  5 - P1.3 */
-//    NOT_ON_TIMER, /*  6 - P1.4, TODO: T0A2??, not on DIP20 devices according tot datasheet  */
-//    T0A0,         /*  7 - P1.5, note: A0 output cannot be used with analogWrite  */
-//    T1A0,         /*  8 - P2.0, note: A0 output cannot be used with analogWrite */
-//    T1A1,         /*  9 - P2.1 */
-//    T1A1,         /* 10 - P2.3 */
-//    T1A0,         /* 11 - P2.4 note: A0 output cannot be used with analogWrite  */
-//    T1A2,         /* 12 - P2.5 */
-//    T1A2,         /* 13 - P2.6 */
-//    T0A1,         /* 14 - P1.6 */
-//    NOT_ON_TIMER /* 15 - P1.7 */
-
-// Besides, the different pins for the separate analogwrite channels should be on the separate timer+compare 
 #include "utils.h"
-
-#define TTY_SPEED 38400
-//#define TTY_SPEED 9600
-
-#define M2_OUT_1  P1_4
-#define M2_OUT_2  P1_3
-#define M2_EN     P2_1 // analog write
-
-#define M1_OUT_1  P2_4
-#define M1_OUT_2  P2_3
-#define M1_EN     P2_5 // analog write
-
-#define ENC2_IN  P1_5
-#define ENC1_IN  P2_0
-
-#define US_IN    P1_6
-#define US_OUT   P1_7
+#include "robot_hw.h"
+#include "robot_flags.h"
 
 // common vars 
 const unsigned int PID_TIMEOUT_HIGH = 200;
@@ -59,25 +24,6 @@ const unsigned int M_WUP_PID_CNT=1;
 
 const unsigned int TASK_TIMEOUT = 10000; 
 
-const unsigned int R_F_ISDRIVE=0x01;
-const unsigned int R_F_ISOVERFLOW=0x02;
-const unsigned int R_F_ISTASK=0x04;
-const unsigned int R_F_ISTASKMOV=0x08;
-const unsigned int R_F_ISTASKROT=0x16;
-
-#define F_ISDRIVE() (flags&R_F_ISDRIVE)
-#define F_SETDRIVE() (flags|=R_F_ISDRIVE)
-#define F_CLEARDRIVE() (flags&=~R_F_ISDRIVE)
-#define F_ISOVERFLOW() (flags&R_F_ISOVERFLOW)
-#define F_SETOVERFLOW() (flags|=R_F_ISOVERFLOW)
-#define F_CLEAROVERFLOW() (flags&=~R_F_ISOVERFLOW)
-#define F_ISTASKANY() (flags&R_F_ISTASK)
-#define F_ISTASKMOV() (flags&R_F_ISTASKMOV)
-#define F_ISTASKROT() (flags&R_F_ISTASKROT)
-#define F_SETTASKMOV() (flags|=(R_F_ISTASK|R_F_ISTASKMOV))
-#define F_SETTASKROT() (flags|=(R_F_ISTASK|R_F_ISTASKROT))
-#define F_CLEARTASK() (flags&=~(R_F_ISTASK|R_F_ISTASKMOV|R_F_ISTASKROT))
-
 // tracking
 
 #define CHGST_TO_MM_10(CNT)  ((int32_t)(CNT)*V_NORM_PI2*WHEEL_RAD_MM_10/WHEEL_CHGSTATES/10000)
@@ -93,18 +39,9 @@ const unsigned int R_F_ISTASKROT=0x16;
 #define M_PID_KD   2
 //#define M_PID_KT   1 // task err
 #define M_PID_DIV  4
-#define M_PID_KI_DIV  10
+#define M_PID_KI_DIV  5
 
 #define BUF_SIZE 16
-
-enum EnumCmd { EnumCmdDrive=1, EnumCmdTest=2, EnumCmdStop=3, EnumCmdLog=4, EnumCmdContinueDrive=5, EnumCmdRst=6, EnumCmdTaskMove=7, EnumCmdTaskRotate=8, EnumCmdWallLog=9};  
-enum EnumError { EnumErrorUnknown=-1, EnumErrorBadSyntax=-2, EnumErrorBadParam=-3, EnumErrorNone=-100};  
-
-struct PosStruct {
-  int16_t nx, ny;    // NORM
-  int32_t x, y;      //in 10thmm - up to 320 cm
-  int32_t angle;        // in nrads
-} ;
 
 struct TaskStruct {
   int32_t target;  // in mm or nrads
@@ -133,12 +70,10 @@ int8_t cmdResult=EnumErrorNone;
 uint8_t cmd_power[2]={0,0}; 
 uint8_t drv_dir[2]={0,0}; 
 
-// parameters
-uint8_t calib_enc_rate_high=0; // target rate (counts per RATE_SAMPLE_PERIOD) for 100 power
-uint8_t calib_enc_rate_low=0; // target rate (counts per RATE_SAMPLE_PERIOD) for low power
-uint8_t pow_low=0;
-uint8_t pow_high=0;
-uint8_t pid_to=0;
+// calibration parameters
+uint8_t enc_rate_high=0, enc_rate_low=0; // target rate (counts per RATE_SAMPLE_PERIOD) for low power
+uint8_t pow_low=0, pow_high=0;
+uint8_t coast_low=0, coast_high=0; // in cm
 
 // current state 
 uint8_t flags=0; 
@@ -152,6 +87,7 @@ int32_t angle=0;
 uint16_t us_dist=9999; 
 
 // PID section
+uint8_t pid_to=0;
 uint8_t pid_cnt=0;
 uint8_t cur_power[2]={0,0}; 
 uint8_t trg_rate[2]={0,0}; 
@@ -181,7 +117,6 @@ void setup()
     digitalWrite(ports[i], LOW); 
     pinMode(ports[i], OUTPUT);
   }
-  analogFrequency(32);
  
   pinMode(ENC1_IN, INPUT);     
   attachInterrupt(ENC1_IN, encodeInterrupt_1, CHANGE); 
@@ -190,17 +125,25 @@ void setup()
   
   pinMode(US_OUT, OUTPUT);     
   pinMode(US_IN, INPUT);     
+   
+  analogFrequency(32); 
+  Serial.begin(TTY_SPEED);
   
   pinMode(RED_LED, OUTPUT);     
   for(i=0; i<5; i++) {
     digitalWrite(RED_LED, HIGH); delay(100); digitalWrite(RED_LED, LOW); 
   }
-  Serial.begin(TTY_SPEED);
   
-  digitalWrite(RED_LED, HIGH);  
-   
   // calibration sequence
-  F_SETDRIVE();
+  //F_SETDRIVE();
+  //digitalWrite(RED_LED, HIGH);  
+ 
+  pow_low=M_POW_LOWEST_LIM;
+  Calibrate(RATE_SAMPLE_TARGET_LOW, &pow_low, &enc_rate_low, &coast_low);
+  pow_high=pow_low+M_POW_STEP;
+  Calibrate(RATE_SAMPLE_TARGET_HIGH, &pow_high, &enc_rate_high, &coast_high);
+  
+  /*
   pow_low=M_POW_LOWEST_LIM;
   while(pow_low<M_POW_HIGH_LIM) {
    ReadEnc(); 
@@ -223,9 +166,10 @@ void setup()
   }
   
   calib_enc_rate_high = (last_enc_cnt[0]+last_enc_cnt[1])/2;
+*/
 
-  StopDrive();
-  digitalWrite(RED_LED, LOW);
+//  StopDrive();
+//  digitalWrite(RED_LED, LOW);
   
   for(i=0; i<WALL_LOG_SZ; i++) logw[i].adv=logw[i].usd=0;
 
@@ -233,7 +177,7 @@ void setup()
   
   lastCommandTime = lastPidTime = millis();  
   
-  delay(RATE_SAMPLE_PERIOD*2); // let it stop
+  //delay(RATE_SAMPLE_PERIOD*3); // let it stop
   
   InitPos();
 }
@@ -284,106 +228,6 @@ void loop()
   } // read serial
 }
 
-void Notify() {
-  addJson("CQ", cmdResult);
-  addJson("I", cmd_id);
-  switch(cmdResult) {
-    case EnumCmdDrive: 
-    case EnumCmdContinueDrive:     
-    case EnumCmdStop: 
-    case EnumCmdRst: {
-      // speeed calc
-      int16_t s[2];
-      for(uint8_t i=0; i<2; i++) {         
-        if(drv_dir[i]==0) s[i]=0;
-        else {
-          s[i]=last_enc_rate[i]*WHEEL_RATIO_SMPS_10;
-          if(drv_dir[i]==2) s[i]=-s[i];
-        } 
-      }
-      addJson("L", last_dur); 
-      addJsonArr16_2("P", cur_power[0], cur_power[1]);
-      addJsonArr16_2("T", trg_rate[0], trg_rate[1]);
-      addJsonArr16_2("R", last_enc_rate[0], last_enc_rate[1]);
-      addJsonArr16_2("W", last_enc_rate[0]*WHEEL_RATIO_RPM, last_enc_rate[1]*WHEEL_RATIO_RPM);      
-      addJson("S", (s[0]+s[1])/2);
-      addJson("D", (int16_t)(dist/100)); // in cm
-      addJson("F", (int16_t)(diff/100)); // in cm
-      addJsonArr16_2("N", (int16_t)nx, (int16_t)ny); // in normval
-      addJsonArr16_2("X", (int16_t)(x/100), (int16_t)(y/100)); // in cm
-      addJson("U", (int16_t)(us_dist));
-      }
-      break; 
-    case EnumCmdTest:    
-      addJson("VCC", getVcc());
-      addJsonArr16_2("CLB_P_LH", pow_low, pow_high);   
-      addJsonArr16_2("CLB_R_LH", calib_enc_rate_low, calib_enc_rate_high);   
-      delay(10);
-      addJsonArr16_2("N", (int16_t)nx, (int16_t)ny); // in normval
-      addJsonArr16_2("X", (int16_t)(x/100), (int16_t)(y/100)); // in cm
-      addJson("A", RADN_TO_GRAD(angle)); 
-      addJson("U", (int16_t)(us_dist));      
-      delay(10);
-      addJson("TG", task.target);
-      //addJsonArr16_2("TN", (int16_t)task.nx, (int16_t)task.ny); // in normval
-      //addJsonArr16_2("TX", (int16_t)(task.x/100), (int16_t)(task.y/100)); // in cm
-      addJsonArr16_2("DX", (int16_t)((task.x_abs-x)/100), (int16_t)((task.y_abs-y)/100)); // in cm
-      addJsonArr16_2("TD", (int16_t)(task.dist/100), (int16_t)(task.adv_d/100)); // in cm 
-      addJsonArr16_2("TA", RADN_TO_GRAD(task.angle), RADN_TO_GRAD(task.adv_a)); // in deg
-      addJson("L", last_dur); 
-      break;
-    case EnumCmdWallLog: {
-      Serial.print("\"LOGW\":\""); 
-      for(uint8_t i=WALL_LOG_SZ; i>0; i--) { 
-        PrintLogPair(logw[i-1].adv, logw[i-1].usd); 
-        delay(10);
-      }
-      Serial.print("\",");
-      break;
-    }
-    case EnumCmdTaskMove:       
-    case EnumCmdTaskRotate:           
-      addJson("FT", flags&R_F_ISTASK);
-      addJson("FM", flags&R_F_ISTASKMOV);
-      addJson("TG", task.target);
-      if(F_ISTASKMOV()) {
-        addJsonArr16_2("TABSX", task.x_abs/100, task.y_abs/100); // absolute, in cm        
-      } else {
-        addJson("TABSA", RADN_TO_GRAD(angle+task.target)); // absolute
-      }
-      break;
-    default:;
-   }
-  Serial.println();
-}
-
-boolean CheckCommandTimeout(uint16_t t)
-{
-  unsigned long commandTime = millis();
-  if ( commandTime >= lastCommandTime) commandTime -= lastCommandTime; 
-  else lastCommandTime = 0;
-  return commandTime > t;
-}
-
-void readUSDist() {
-  int16_t usd_prev = us_dist;
-  digitalWrite(US_OUT, LOW);
-  delayMicroseconds(2);
-  digitalWrite(US_OUT, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(US_OUT, LOW);
-  //uint32_t ms=millis();
-  uint32_t d=pulseIn(US_IN, HIGH, 25000);
-  if(!d) return;
-  //us_meas_dur = millis()-ms;
-  us_dist=(int16_t)(d/58);  
-  if(F_ISDRIVE()) {
-      for(uint8_t i=WALL_LOG_SZ-1; i>=1; i--) logw[i]=logw[i-1];
-      logw[0].adv=task.adv_d/100; //cm
-      logw[0].usd=usd_prev-us_dist;
-  }
-}
-
 void InitPos() { 
   x=y=0;
   nx=0; ny=V_NORM;
@@ -397,7 +241,7 @@ void StartDrive()
     if(drv_dir[i]) {
        cur_power[i]=cmd_power[i];
        if(cur_power[i]>pow_high) cur_power[i]=pow_high;
-       trg_rate[i]=map(cur_power[i], pow_low, pow_high, calib_enc_rate_low, calib_enc_rate_high);
+       trg_rate[i]=map(cur_power[i], pow_low, pow_high, enc_rate_low, enc_rate_high);
      } else {
        trg_rate[i]=0;
        cur_power[i]=0;
@@ -503,15 +347,12 @@ void ReadEnc()
     nx=ty; ny=-tx;
     x+=(int32_t)nx*dd/(2*V_NORM); // in 10th mm
     y+=(int32_t)ny*dd/(2*V_NORM); // in 10th mm
-    //angle += tl;
     angle = (angle+tl)%V_NORM_PI2;
-    
     // task vars
     task.dist += dd/2; // in 10th mm
     task.adv_d = dd/2; // in 10th mm
     task.adv_a = tl;
     task.angle += tl;
- 
     tx=(task.x_abs-x)/10; ty=(task.y_abs-y)/10; // in mm
     normalize(&tx, &ty);
     task.bearing_abs = inva16(nx, ny, tx, ty); //angle from vector product
@@ -567,6 +408,33 @@ void PID(uint16_t ctime)
   PrintLogToSerial(ctime);
   pid_cnt++;
   }
+}
+
+void Calibrate(uint8_t targ, uint8_t *ppow, uint8_t *pencr, uint8_t *pcoast) {
+  uint8_t pow = *ppow;
+  F_SETDRIVE();
+  digitalWrite(RED_LED, HIGH);  
+  while(pow<M_POW_HIGH_LIM) {
+   ReadEnc(); 
+   Drive(1, pow, 1, pow);
+   delay(RATE_SAMPLE_PERIOD);
+   ReadEnc();   
+   if(last_enc_cnt[0]>=targ && last_enc_cnt[1]>=targ) break;
+   pow+=M_POW_STEP;
+  }
+  *ppow=pow;
+  *pencr = (last_enc_cnt[0]+last_enc_cnt[1])/2;
+  // coasting
+  StopDrive();
+  digitalWrite(RED_LED, LOW);  
+  uint8_t encsum=0;
+  uint8_t i=0;
+  while((last_enc_cnt[0]+last_enc_cnt[1])>0 && i++<10) {
+    encsum += (last_enc_cnt[0]+last_enc_cnt[1])/2;
+    delay(RATE_SAMPLE_PERIOD);
+    ReadEnc();
+  }
+  *pcoast = CHGST_TO_MM_10(encsum)/100; // in cm
 }
 
 void Drive(uint8_t ldir, uint8_t lpow, uint8_t rdir, uint8_t rpow) 
@@ -625,6 +493,106 @@ void PrintLogPair(int16_t v1, int16_t v2) {
   Serial.print("("); Serial.print(v1);Serial.print(","); Serial.print(v2); Serial.print("),"); 
 }
 
+void Notify() {
+  addJson("CQ", cmdResult);
+  addJson("I", cmd_id);
+  switch(cmdResult) {
+    case EnumCmdDrive: 
+    case EnumCmdContinueDrive:     
+    case EnumCmdStop: 
+    case EnumCmdRst: {
+      // speeed calc
+      int16_t s[2];
+      for(uint8_t i=0; i<2; i++) {         
+        if(drv_dir[i]==0) s[i]=0;
+        else {
+          s[i]=last_enc_rate[i]*WHEEL_RATIO_SMPS_10;
+          if(drv_dir[i]==2) s[i]=-s[i];
+        } 
+      }
+      addJson("L", last_dur); 
+      addJsonArr16_2("P", cur_power[0], cur_power[1]);
+      addJsonArr16_2("T", trg_rate[0], trg_rate[1]);
+      addJsonArr16_2("R", last_enc_rate[0], last_enc_rate[1]);
+      addJsonArr16_2("W", last_enc_rate[0]*WHEEL_RATIO_RPM, last_enc_rate[1]*WHEEL_RATIO_RPM);      
+      addJson("S", (s[0]+s[1])/2);
+      addJson("D", (int16_t)(dist/100)); // in cm
+      addJson("F", (int16_t)(diff/100)); // in cm
+      addJsonArr16_2("N", (int16_t)nx, (int16_t)ny); // in normval
+      addJsonArr16_2("X", (int16_t)(x/100), (int16_t)(y/100)); // in cm
+      addJson("U", (int16_t)(us_dist));
+      }
+      break; 
+    case EnumCmdTest:    
+      addJson("VCC", getVcc());
+      addJsonArr16_2("CLB_P_LH", pow_low, pow_high);   
+      addJsonArr16_2("CLB_R_LH", enc_rate_low, enc_rate_high);   
+      addJsonArr16_2("CLB_R_CS", coast_low, coast_high);   
+      delay(10);
+      addJsonArr16_2("N", (int16_t)nx, (int16_t)ny); // in normval
+      addJsonArr16_2("X", (int16_t)(x/100), (int16_t)(y/100)); // in cm
+      addJson("A", RADN_TO_GRAD(angle)); 
+      addJson("U", (int16_t)(us_dist));      
+      delay(10);
+      addJson("TG", task.target);
+      //addJsonArr16_2("TN", (int16_t)task.nx, (int16_t)task.ny); // in normval
+      //addJsonArr16_2("TX", (int16_t)(task.x/100), (int16_t)(task.y/100)); // in cm
+      addJsonArr16_2("DX", (int16_t)((task.x_abs-x)/100), (int16_t)((task.y_abs-y)/100)); // in cm
+      addJsonArr16_2("TD", (int16_t)(task.dist/100), (int16_t)(task.adv_d/100)); // in cm 
+      addJsonArr16_2("TA", RADN_TO_GRAD(task.angle), RADN_TO_GRAD(task.adv_a)); // in deg
+      addJson("L", last_dur); 
+      break;
+    case EnumCmdWallLog: {
+      Serial.print("\"LOGW\":\""); 
+      for(uint8_t i=WALL_LOG_SZ; i>0; i--) { 
+        PrintLogPair(logw[i-1].adv, logw[i-1].usd); 
+        delay(10);
+      }
+      Serial.print("\",");
+      break;
+    }
+    case EnumCmdTaskMove:       
+    case EnumCmdTaskRotate:           
+      addJson("FT", flags&R_F_ISTASK);
+      addJson("FM", flags&R_F_ISTASKMOV);
+      addJson("TG", task.target);
+      if(F_ISTASKMOV()) {
+        addJsonArr16_2("TABSX", task.x_abs/100, task.y_abs/100); // absolute, in cm        
+      } else {
+        addJson("TABSA", RADN_TO_GRAD(angle+task.target)); // absolute
+      }
+      break;
+    default:;
+   }
+  Serial.println();
+}
+
+boolean CheckCommandTimeout(uint16_t t)
+{
+  unsigned long commandTime = millis();
+  if ( commandTime >= lastCommandTime) commandTime -= lastCommandTime; 
+  else lastCommandTime = 0;
+  return commandTime > t;
+}
+
+void readUSDist() {
+  int16_t usd_prev = us_dist;
+  digitalWrite(US_OUT, LOW);
+  delayMicroseconds(2);
+  digitalWrite(US_OUT, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(US_OUT, LOW);
+  //uint32_t ms=millis();
+  uint32_t d=pulseIn(US_IN, HIGH, 25000);
+  if(!d) return;
+  //us_meas_dur = millis()-ms;
+  us_dist=(int16_t)(d/58);  
+  if(F_ISDRIVE()) {
+      for(uint8_t i=WALL_LOG_SZ-1; i>=1; i--) logw[i]=logw[i-1];
+      logw[0].adv=task.adv_d/100; //cm
+      logw[0].usd=usd_prev-us_dist;
+  }
+}
 //=======================================
 
 // read serial data into buffer. execute command
