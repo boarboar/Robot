@@ -363,8 +363,8 @@ void PID(uint16_t ctime)
       int8_t err=0;
       last_enc_rate[i]=(uint8_t)((uint16_t)last_enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
       if(pid_cnt>=M_WUP_PID_CNT) { // do not correct for the first cycles - ca 100-200ms(warmup)
-        err = (trg_rate[i]-last_enc_rate[i])+t_err[i];
-        //err = trg_rate[i]-last_enc_rate[i];
+        //err = (trg_rate[i]-last_enc_rate[i])+t_err[i];
+        err = trg_rate[i]-last_enc_rate[i];
         d_err[i] = err-last_err[i];
         int_err[i]=int_err[i]+err;
         int16_t pow=cur_power[i]+((int16_t)err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI/M_PID_KI_DIV+(int16_t)d_err[i]*M_PID_KD)/M_PID_DIV;
