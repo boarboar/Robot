@@ -217,7 +217,7 @@ void StartDrive()
        cur_power[i]=0;
      }    
     last_err[i]=0;
-    //int_err[i]=0; // ?
+    int_err[i]=0; 
   }
   ReadEnc();
   Drive(drv_dir[0], cur_power[0], drv_dir[1], cur_power[1]); // change interface
@@ -436,6 +436,7 @@ void PrintLogToSerial(uint16_t ctime) {
   PrintLogPair(last_enc_cnt[0], last_enc_cnt[1]); 
   PrintLogPair(trg_rate[0], trg_rate[1]);
   PrintLogPair(last_enc_rate[0], last_enc_rate[1]);
+  Serial.print(":");
   PrintLogPair(trg_rate[0]-last_enc_rate[0], trg_rate[1]-last_enc_rate[1]);
   PrintLogPair(d_err[0], d_err[1]);
   PrintLogPair(int_err[0]/M_PID_KI_DIV, int_err[1]/M_PID_KI_DIV);
