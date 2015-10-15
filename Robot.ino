@@ -20,7 +20,8 @@ const unsigned int WHEEL_RATIO_SMPS_10 = (WHEEL_RAD_MM_10/10*628/RATE_SAMPLE_PER
 const unsigned int US_WALL_DIST=20;
 const unsigned int US_WALL_CNT_THR=100;
 const unsigned int M_COAST_TIME=400;
-const unsigned int M_WUP_PID_CNT=1;
+const unsigned int M_WUP_PID_CNT=3;
+const int8_t M_PID_TERR_LIM=2;
 
 const unsigned int TASK_TIMEOUT = 10000; 
 
@@ -39,7 +40,7 @@ const unsigned int TASK_TIMEOUT = 10000;
 #define M_PID_KD   2
 //#define M_PID_KT   1 // task err
 #define M_PID_DIV  4
-#define M_PID_KI_DIV  5
+#define M_PID_KI_DIV  10
 
 #define BUF_SIZE 16
 
@@ -135,41 +136,10 @@ void setup()
   }
   
   // calibration sequence
-  //F_SETDRIVE();
-  //digitalWrite(RED_LED, HIGH);  
- 
   pow_low=M_POW_LOWEST_LIM;
   Calibrate(RATE_SAMPLE_TARGET_LOW, &pow_low, &enc_rate_low, &coast_low);
   pow_high=pow_low+M_POW_STEP;
   Calibrate(RATE_SAMPLE_TARGET_HIGH, &pow_high, &enc_rate_high, &coast_high);
-  
-  /*
-  pow_low=M_POW_LOWEST_LIM;
-  while(pow_low<M_POW_HIGH_LIM) {
-   ReadEnc(); 
-   Drive(1, pow_low, 1, pow_low);
-   delay(RATE_SAMPLE_PERIOD);
-   ReadEnc();   
-   if(last_enc_cnt[0]>=RATE_SAMPLE_TARGET_LOW && last_enc_cnt[1]>=RATE_SAMPLE_TARGET_LOW) break;
-   pow_low+=M_POW_STEP;
-  }
-  calib_enc_rate_low = (last_enc_cnt[0]+last_enc_cnt[1])/2;
- 
-  pow_high=pow_low+M_POW_STEP;
-  while(pow_high<M_POW_HIGH_LIM) {
-   ReadEnc();
-   Drive(1, pow_high, 1, pow_high);
-   delay(RATE_SAMPLE_PERIOD);
-   ReadEnc();   
-   if(last_enc_cnt[0]>=RATE_SAMPLE_TARGET_HIGH && last_enc_cnt[1]>=RATE_SAMPLE_TARGET_HIGH) break;
-   pow_high+=M_POW_STEP;
-  }
-  
-  calib_enc_rate_high = (last_enc_cnt[0]+last_enc_cnt[1])/2;
-*/
-
-//  StopDrive();
-//  digitalWrite(RED_LED, LOW);
   
   for(i=0; i<WALL_LOG_SZ; i++) logw[i].adv=logw[i].usd=0;
 
@@ -381,8 +351,8 @@ void PID(uint16_t ctime)
     if(F_ISTASKANY()) {      
       if(F_ISTASKMOV()) {
         int8_t task_err=RADN_TO_GRAD(task.bearing_abs)/10;
-        if(task_err>1) task_err=1;
-        if(task_err<-1) task_err=-1;
+        if(task_err>M_PID_TERR_LIM) task_err=M_PID_TERR_LIM;
+        if(task_err<-M_PID_TERR_LIM) task_err=-M_PID_TERR_LIM;
         t_err[0]=task_err;
         t_err[1]=-task_err;
       } else { // rotate
@@ -393,8 +363,8 @@ void PID(uint16_t ctime)
       int8_t err=0;
       last_enc_rate[i]=(uint8_t)((uint16_t)last_enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
       if(pid_cnt>=M_WUP_PID_CNT) { // do not correct for the first cycles - ca 100-200ms(warmup)
-        //err = (trg_rate[i]-last_enc_rate[i])+t_err[i];
-        err = trg_rate[i]-last_enc_rate[i];
+        err = (trg_rate[i]-last_enc_rate[i])+t_err[i];
+        //err = trg_rate[i]-last_enc_rate[i];
         d_err[i] = err-last_err[i];
         int_err[i]=int_err[i]+err;
         int16_t pow=cur_power[i]+((int16_t)err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI/M_PID_KI_DIV+(int16_t)d_err[i]*M_PID_KD)/M_PID_DIV;
@@ -427,14 +397,16 @@ void Calibrate(uint8_t targ, uint8_t *ppow, uint8_t *pencr, uint8_t *pcoast) {
   // coasting
   StopDrive();
   digitalWrite(RED_LED, LOW);  
-  uint8_t encsum=0;
+  //uint8_t encsum=0;
   uint8_t i=0;
+  task.dist=0;
   while((last_enc_cnt[0]+last_enc_cnt[1])>0 && i++<10) {
-    encsum += (last_enc_cnt[0]+last_enc_cnt[1])/2;
+    //encsum += (last_enc_cnt[0]+last_enc_cnt[1])/2;
     delay(RATE_SAMPLE_PERIOD);
     ReadEnc();
   }
-  *pcoast = CHGST_TO_MM_10(encsum)/100; // in cm
+  //*pcoast = CHGST_TO_MM_10(encsum)/100; // in cm
+  *pcoast = task.dist/100;
 }
 
 void Drive(uint8_t ldir, uint8_t lpow, uint8_t rdir, uint8_t rpow) 
