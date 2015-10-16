@@ -37,9 +37,10 @@ const unsigned int TASK_TIMEOUT = 10000;
 
 #define M_PID_KP   2
 #define M_PID_KI   1
-#define M_PID_KD   2
-//#define M_PID_KT   1 // task err
-#define M_PID_DIV  4
+//#define M_PID_KD   2
+//#define M_PID_DIV  4
+#define M_PID_KD   4
+#define M_PID_DIV  6
 #define M_PID_KI_DIV  10
 
 #define BUF_SIZE 16
@@ -50,8 +51,7 @@ struct TaskStruct {
   //int16_t nx, ny;    // NORM
   //int32_t x, y;      //in 10thmm - up to 320 cm
   int32_t angle;        // in nrads
-  int32_t x_abs, y_abs;      //in 10thmm - up to 320 cm
-  
+  int32_t x_abs, y_abs;      //in 10thmm - up to 320 cm  
   int32_t dist;   // in 10th mm
   int16_t adv_d;  // in 10th mm
   int16_t adv_a;  // in nrads
@@ -72,9 +72,9 @@ uint8_t cmd_power[2]={0,0};
 uint8_t drv_dir[2]={0,0}; 
 
 // calibration parameters
-uint8_t enc_rate_high=0, enc_rate_low=0; // target rate (counts per RATE_SAMPLE_PERIOD) for low power
-uint8_t pow_low=0, pow_high=0;
-uint8_t coast_low=0, coast_high=0; // in cm
+uint8_t enc_rate_high=0, enc_rate_low=0, enc_rot_rate_low=0 ; // target rate (counts per RATE_SAMPLE_PERIOD) for low power
+uint8_t pow_low=0, pow_high=0, pow_rot_low=0;
+uint8_t coast_low=0, coast_high=0, coast_rot_low=0; // in cm / deg
 
 // current state 
 uint8_t flags=0; 
@@ -137,9 +137,12 @@ void setup()
   
   // calibration sequence
   pow_low=M_POW_LOWEST_LIM;
-  Calibrate(RATE_SAMPLE_TARGET_LOW, &pow_low, &enc_rate_low, &coast_low);
+  Calibrate(RATE_SAMPLE_TARGET_LOW, &pow_low, &enc_rate_low, &coast_low, false);
   pow_high=pow_low+M_POW_STEP;
-  Calibrate(RATE_SAMPLE_TARGET_HIGH, &pow_high, &enc_rate_high, &coast_high);
+  Calibrate(RATE_SAMPLE_TARGET_HIGH, &pow_high, &enc_rate_high, &coast_high, false);
+
+  pow_rot_low=M_POW_LOWEST_LIM;
+  Calibrate(RATE_SAMPLE_TARGET_LOW, &pow_rot_low, &enc_rot_rate_low, &coast_rot_low, false);
   
   for(i=0; i<WALL_LOG_SZ; i++) logw[i].adv=logw[i].usd=0;
 
@@ -380,13 +383,13 @@ void PID(uint16_t ctime)
   }
 }
 
-void Calibrate(uint8_t targ, uint8_t *ppow, uint8_t *pencr, uint8_t *pcoast) {
+void Calibrate(uint8_t targ, uint8_t *ppow, uint8_t *pencr, uint8_t *pcoast, uint8_t rot) {
   uint8_t pow = *ppow;
   F_SETDRIVE();
   digitalWrite(RED_LED, HIGH);  
   while(pow<M_POW_HIGH_LIM) {
    ReadEnc(); 
-   Drive(1, pow, 1, pow);
+   Drive(1, pow, rot ? 2 : 1, pow);
    delay(RATE_SAMPLE_PERIOD);
    ReadEnc();   
    if(last_enc_cnt[0]>=targ && last_enc_cnt[1]>=targ) break;
@@ -400,13 +403,17 @@ void Calibrate(uint8_t targ, uint8_t *ppow, uint8_t *pencr, uint8_t *pcoast) {
   //uint8_t encsum=0;
   uint8_t i=0;
   task.dist=0;
+  task.angle=0;
   while((last_enc_cnt[0]+last_enc_cnt[1])>0 && i++<10) {
     //encsum += (last_enc_cnt[0]+last_enc_cnt[1])/2;
     delay(RATE_SAMPLE_PERIOD);
     ReadEnc();
   }
   //*pcoast = CHGST_TO_MM_10(encsum)/100; // in cm
-  *pcoast = task.dist/100;
+  if(rot)
+    *pcoast = RADN_TO_GRAD(task.angle);
+  else 
+    *pcoast = task.dist/100;
 }
 
 void Drive(uint8_t ldir, uint8_t lpow, uint8_t rdir, uint8_t rpow) 
@@ -500,7 +507,10 @@ void Notify() {
       addJson("VCC", getVcc());
       addJsonArr16_2("CLB_P_LH", pow_low, pow_high);   
       addJsonArr16_2("CLB_R_LH", enc_rate_low, enc_rate_high);   
-      addJsonArr16_2("CLB_R_CS", coast_low, coast_high);   
+      addJsonArr16_2("CLB_C_LH", coast_low, coast_high);   
+      addJson("CLB_P_LRT", pow_rot_low);
+      addJson("CLB_R_LRT", enc_rot_rate_low);
+      addJson("CLB_C_LRT", coast_rot_low);
       delay(10);
       addJsonArr16_2("N", (int16_t)nx, (int16_t)ny); // in normval
       addJsonArr16_2("X", (int16_t)(x/100), (int16_t)(y/100)); // in cm
