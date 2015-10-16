@@ -504,14 +504,7 @@ void Notify() {
       }
       break; 
     case EnumCmdTest:    
-      addJson("VCC", getVcc());
-      addJsonArr16_2("CLB_P_LH", pow_low, pow_high);   
-      addJsonArr16_2("CLB_R_LH", enc_rate_low, enc_rate_high);   
-      addJsonArr16_2("CLB_C_LH", coast_low, coast_high);   
-      addJson("CLB_P_LRT", pow_rot_low);
-      addJson("CLB_R_LRT", enc_rot_rate_low);
-      addJson("CLB_C_LRT", coast_rot_low);
-      delay(10);
+ //     addJson("VCC", getVcc());
       addJsonArr16_2("N", (int16_t)nx, (int16_t)ny); // in normval
       addJsonArr16_2("X", (int16_t)(x/100), (int16_t)(y/100)); // in cm
       addJson("A", RADN_TO_GRAD(angle)); 
@@ -525,6 +518,14 @@ void Notify() {
       addJsonArr16_2("TA", RADN_TO_GRAD(task.angle), RADN_TO_GRAD(task.adv_a)); // in deg
       addJson("L", last_dur); 
       break;
+   case EnumCmdSetParam:    
+      addJsonArr16_2("CLB_P_LH", pow_low, pow_high);   
+      addJsonArr16_2("CLB_R_LH", enc_rate_low, enc_rate_high);   
+      addJsonArr16_2("CLB_C_LH", coast_low, coast_high);   
+      addJson("CLB_P_LRT", pow_rot_low);
+      addJson("CLB_R_LRT", enc_rot_rate_low);
+      addJson("CLB_C_LRT", coast_rot_low);
+      break;      
     case EnumCmdWallLog: {
       Serial.print("\"LOGW\":\""); 
       for(uint8_t i=WALL_LOG_SZ; i>0; i--) { 
@@ -641,6 +642,7 @@ int8_t Parse()
     return EnumCmdTaskMove;
   }
   else if((pos=Match(buf, bytes, "TR"))) {
+    if(pos>=bytes || buf[pos]!='=') return EnumErrorBadSyntax;
     pos++;
     pos = bctoi(buf, pos, &m);      
     if(!m) return EnumErrorBadParam;
@@ -650,6 +652,9 @@ int8_t Parse()
   }
   else if((pos=Match(buf, bytes, "T"))) {
     return EnumCmdTest;
+  }
+  else if((pos=Match(buf, bytes, "P"))) {
+    return EnumCmdSetParam;
   }
   else return EnumErrorUnknown;
 }
@@ -667,19 +672,4 @@ void baseInterrupt(uint8_t i) {
   else v_enc_cnt[i]++; 
 } 
 
-// returns VCC in .01 volts
-int16_t getVcc() {
-  // start with the 1.5V internal reference
-  analogReference(INTERNAL1V5);
-  int data = analogRead(11);
-  // if overflow, VCC is > 3V, switch to the 2.5V reference
-  if (data==0x3ff) {
-    analogReference(INTERNAL2V5); 
-    data = (int16_t)map(analogRead(11), 0, 1023, 0, 500);
-  } else {
-    data = (int16_t)map(data, 0, 1023, 0, 300);
-  }
-  analogReference(DEFAULT);
-  return data;  
-}
 

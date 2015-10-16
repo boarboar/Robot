@@ -143,7 +143,6 @@ void addJson(const char *name, int16_t value) {
   Serial.print(",");
  }
 
- 
  void addJsonArr16_2(const char *name, int16_t v1, int16_t v2) {
     Serial.print("\"");
     Serial.print(name);
@@ -154,6 +153,23 @@ void addJson(const char *name, int16_t value) {
     Serial.print("],");
  }
  
+ /*
+ // returns VCC in .01 volts
+int16_t getVcc() {
+  // start with the 1.5V internal reference
+  analogReference(INTERNAL1V5);
+  int data = analogRead(11);
+  // if overflow, VCC is > 3V, switch to the 2.5V reference
+  if (data==0x3ff) {
+    analogReference(INTERNAL2V5); 
+    data = (int16_t)map(analogRead(11), 0, 1023, 0, 500);
+  } else {
+    data = (int16_t)map(data, 0, 1023, 0, 300);
+  }
+  analogReference(DEFAULT);
+  return data;  
+}
+*/
  /*
 
 float sine(float x)
