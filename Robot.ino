@@ -23,7 +23,7 @@ const unsigned int M_COAST_TIME=400;
 const unsigned int M_WUP_PID_CNT=3;
 const int8_t M_PID_TERR_LIM=2;
 
-const unsigned int TASK_TIMEOUT = 10000; 
+const unsigned int TASK_TIMEOUT = 20000; 
 
 // tracking
 
@@ -40,7 +40,7 @@ const unsigned int TASK_TIMEOUT = 10000;
 //#define M_PID_KD   2
 //#define M_PID_DIV  4
 #define M_PID_KD   4
-#define M_PID_DIV  6
+#define M_PID_DIV  4
 #define M_PID_KI_DIV  10
 
 #define BUF_SIZE 16
@@ -142,7 +142,7 @@ void setup()
   Calibrate(RATE_SAMPLE_TARGET_HIGH, &pow_high, &enc_rate_high, &coast_high, false);
 
   pow_rot_low=M_POW_LOWEST_LIM;
-  Calibrate(RATE_SAMPLE_TARGET_LOW, &pow_rot_low, &enc_rot_rate_low, &coast_rot_low, false);
+  Calibrate(RATE_SAMPLE_TARGET_LOW, &pow_rot_low, &enc_rot_rate_low, &coast_rot_low, true);
   
   for(i=0; i<WALL_LOG_SZ; i++) logw[i].adv=logw[i].usd=0;
 
