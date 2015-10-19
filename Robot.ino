@@ -43,6 +43,9 @@ const unsigned int TASK_TIMEOUT = 20000;
 #define M_PID_DIV  4
 #define M_PID_KI_DIV  10
 
+#define M_K_K  8
+#define M_K_D 10
+
 #define BUF_SIZE 16
 
 struct TaskStruct {
@@ -92,12 +95,14 @@ uint8_t pid_to=0;
 uint8_t pid_cnt=0;
 uint8_t cur_power[2]={0,0}; 
 uint8_t trg_rate[2]={0,0}; 
-uint8_t last_enc_cnt[2]={0,0}; 
-uint8_t last_enc_rate[2]={0,0}; 
-int8_t last_err[2]={0,0};
+uint8_t enc_cnt[2]={0,0}; 
+uint8_t enc_rate[2]={0,0}; 
+int8_t  prev_err[2]={0,0};
 int16_t int_err[2]={0,0};
 int8_t d_err[2]={0,0};
 int8_t t_err[2]={0,0};
+
+uint8_t enc_rate_opt[2]={0,0};  // Kalman
 
 #define WALL_LOG_SZ 4
 struct __attribute__((__packed__)) WallRec {
@@ -219,8 +224,9 @@ void StartDrive()
        trg_rate[i]=0;
        cur_power[i]=0;
      }    
-    last_err[i]=0;
+    prev_err[i]=0;
     int_err[i]=0; 
+    enc_rate_opt[i]=0;
   }
   ReadEnc();
   Drive(drv_dir[0], cur_power[0], drv_dir[1], cur_power[1]); // change interface
@@ -240,7 +246,7 @@ void StopDrive()
   Drive(0, 0, 0, 0);
   F_CLEARDRIVE();
   digitalWrite(RED_LED, LOW);  
-  last_enc_rate[0]=last_enc_rate[1]=0;
+  enc_rate[0]=enc_rate[1]=0;
   cur_power[0]=cur_power[1]=0;
   last_dur=millis()-lastCommandTime;
 }
@@ -299,10 +305,10 @@ void ReadEnc()
   int16_t tl;
 
   for(uint8_t i=0; i<2; i++) {
-    last_enc_cnt[i]=v_enc_cnt[i];
+    enc_cnt[i]=v_enc_cnt[i];
     v_enc_cnt[i] = 0;
-    if(drv_dir[i]==2) s[i]=-last_enc_cnt[i];
-    else s[i]=last_enc_cnt[i];
+    if(drv_dir[i]==2) s[i]=-enc_cnt[i];
+    else s[i]=enc_cnt[i];
   }
 
   // tracking 
@@ -363,20 +369,21 @@ void PID(uint16_t ctime)
     }
     for(i=0; i<2; i++) {
       //int8_t err=0, err_d=0;
-      int8_t err=0;
-      last_enc_rate[i]=(uint8_t)((uint16_t)last_enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
+      int8_t p_err=0;
+      enc_rate[i]=(uint8_t)((uint16_t)enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
+      enc_rate_opt[i]=(uint8_t)( ((uint16_t)enc_rate[i]*M_K_K+(uint16_t)enc_rate_opt[i]*(M_K_D-M_K_K))/M_K_D ); // Kalman
       if(pid_cnt>=M_WUP_PID_CNT) { // do not correct for the first cycles - ca 100-200ms(warmup)
         //err = (trg_rate[i]-last_enc_rate[i])+t_err[i];
-        err = trg_rate[i]-last_enc_rate[i];
-        d_err[i] = err-last_err[i];
-        int_err[i]=int_err[i]+err;
-        int16_t pow=cur_power[i]+((int16_t)err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI/M_PID_KI_DIV+(int16_t)d_err[i]*M_PID_KD)/M_PID_DIV;
+        p_err = trg_rate[i]-enc_rate[i];
+        d_err[i] = p_err-prev_err[i];
+        int_err[i]=int_err[i]+p_err;
+        int16_t pow=cur_power[i]+((int16_t)p_err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI/M_PID_KI_DIV+(int16_t)d_err[i]*M_PID_KD)/M_PID_DIV;
         if(pow<0) pow=0;
         if(pow>M_POW_MAX) pow=M_POW_MAX;
         if(cur_power[i]!=pow) analogWrite(i==0 ? M1_EN : M2_EN , pow); 
         cur_power[i]=pow;
       }
-      last_err[i]=err;
+      prev_err[i]=p_err;
     } 
   PrintLogToSerial(ctime);
   pid_cnt++;
@@ -392,11 +399,11 @@ void Calibrate(uint8_t targ, uint8_t *ppow, uint8_t *pencr, uint8_t *pcoast, uin
    Drive(1, pow, rot ? 2 : 1, pow);
    delay(RATE_SAMPLE_PERIOD);
    ReadEnc();   
-   if(last_enc_cnt[0]>=targ && last_enc_cnt[1]>=targ) break;
+   if(enc_cnt[0]>=targ && enc_cnt[1]>=targ) break;
    pow+=M_POW_STEP;
   }
   *ppow=pow;
-  *pencr = (last_enc_cnt[0]+last_enc_cnt[1])/2;
+  *pencr = (enc_cnt[0]+enc_cnt[1])/2;
   // coasting
   StopDrive();
   digitalWrite(RED_LED, LOW);  
@@ -404,7 +411,7 @@ void Calibrate(uint8_t targ, uint8_t *ppow, uint8_t *pencr, uint8_t *pcoast, uin
   uint8_t i=0;
   task.dist=0;
   task.angle=0;
-  while((last_enc_cnt[0]+last_enc_cnt[1])>0 && i++<10) {
+  while((enc_cnt[0]+enc_cnt[1])>0 && i++<10) {
     //encsum += (last_enc_cnt[0]+last_enc_cnt[1])/2;
     delay(RATE_SAMPLE_PERIOD);
     ReadEnc();
@@ -440,11 +447,12 @@ void Drive_s(uint8_t dir, uint8_t pow, int16_t p_en, uint8_t p1, uint8_t p2)
 void PrintLogToSerial(uint16_t ctime) {
   Serial.print("@LP:"); 
   PrintLog(cmd_id); PrintLog(ctime);
-  PrintLogPair(last_enc_cnt[0], last_enc_cnt[1]); 
+  PrintLogPair(enc_cnt[0], enc_cnt[1]); 
   PrintLogPair(trg_rate[0], trg_rate[1]);
-  PrintLogPair(last_enc_rate[0], last_enc_rate[1]);
+  PrintLogPair(enc_rate[0], enc_rate[1]);
+  PrintLogPair(enc_rate_opt[0], enc_rate_opt[1]); // Kalman
   Serial.print(":");
-  PrintLogPair(trg_rate[0]-last_enc_rate[0], trg_rate[1]-last_enc_rate[1]);
+  PrintLogPair(trg_rate[0]-enc_rate[0], trg_rate[1]-enc_rate[1]);
   PrintLogPair(d_err[0], d_err[1]);
   PrintLogPair(int_err[0]/M_PID_KI_DIV, int_err[1]/M_PID_KI_DIV);
   PrintLogPair(cur_power[0], cur_power[1]);
@@ -486,15 +494,15 @@ void Notify() {
       for(uint8_t i=0; i<2; i++) {         
         if(drv_dir[i]==0) s[i]=0;
         else {
-          s[i]=last_enc_rate[i]*WHEEL_RATIO_SMPS_10;
+          s[i]=enc_rate[i]*WHEEL_RATIO_SMPS_10;
           if(drv_dir[i]==2) s[i]=-s[i];
         } 
       }
       addJson("L", last_dur); 
       addJsonArr16_2("P", cur_power[0], cur_power[1]);
       addJsonArr16_2("T", trg_rate[0], trg_rate[1]);
-      addJsonArr16_2("R", last_enc_rate[0], last_enc_rate[1]);
-      addJsonArr16_2("W", last_enc_rate[0]*WHEEL_RATIO_RPM, last_enc_rate[1]*WHEEL_RATIO_RPM);      
+      addJsonArr16_2("R", enc_rate[0], enc_rate[1]);
+      addJsonArr16_2("W", enc_rate[0]*WHEEL_RATIO_RPM, enc_rate[1]*WHEEL_RATIO_RPM);      
       addJson("S", (s[0]+s[1])/2);
       addJson("D", (int16_t)(dist/100)); // in cm
       addJson("F", (int16_t)(diff/100)); // in cm
