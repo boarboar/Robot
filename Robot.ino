@@ -264,7 +264,7 @@ void StartTask()
     task.x_abs=x+(int32_t)nx*(task.target)/V_NORM*10; //10th mm
     task.y_abs=y+(int32_t)ny*(task.target)/V_NORM*10; //10th mm
   } else { // rot
-    cmd_power[0]=cmd_power[1]=pow_low;  
+    cmd_power[0]=cmd_power[1]=pow_rot_low;  
     if(task.target>0) { // clockwise
       drv_dir[0]=1; drv_dir[1]=2; 
     } else { //counterclockwise
