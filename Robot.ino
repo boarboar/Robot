@@ -102,7 +102,7 @@ int16_t int_err[2]={0,0};
 int8_t d_err[2]={0,0};
 int8_t t_err[2]={0,0};
 
-uint8_t enc_rate_opt[2]={0,0};  // Kalman
+//uint8_t enc_rate_opt[2]={0,0};  // Kalman
 
 #define WALL_LOG_SZ 4
 struct __attribute__((__packed__)) WallRec {
@@ -226,7 +226,8 @@ void StartDrive()
      }    
     prev_err[i]=0;
     int_err[i]=0; 
-    enc_rate_opt[i]=0;
+    //enc_rate_opt[i]=0;
+    enc_rate[i]=0;
   }
   ReadEnc();
   Drive(drv_dir[0], cur_power[0], drv_dir[1], cur_power[1]); // change interface
@@ -370,8 +371,10 @@ void PID(uint16_t ctime)
     for(i=0; i<2; i++) {
       //int8_t err=0, err_d=0;
       int8_t p_err=0;
-      enc_rate[i]=(uint8_t)((uint16_t)enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
-      enc_rate_opt[i]=(uint8_t)( ((uint16_t)enc_rate[i]*M_K_K+(uint16_t)enc_rate_opt[i]*(M_K_D-M_K_K))/M_K_D ); // Kalman
+      uint8_t rate=(uint8_t)((uint16_t)enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
+      //enc_rate[i]=(uint8_t)((uint16_t)enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
+      //enc_rate_opt[i]=(uint8_t)( ((uint16_t)enc_rate[i]*M_K_K+(uint16_t)enc_rate_opt[i]*(M_K_D-M_K_K))/M_K_D ); // Kalman
+      enc_rate[i]=(uint8_t)( ((uint16_t)rate*M_K_K+(uint16_t)enc_rate[i]*(M_K_D-M_K_K))/M_K_D ); // Kalman
       if(pid_cnt>=M_WUP_PID_CNT) { // do not correct for the first cycles - ca 100-200ms(warmup)
         //err = (trg_rate[i]-last_enc_rate[i])+t_err[i];
         p_err = trg_rate[i]-enc_rate[i];
@@ -450,7 +453,7 @@ void PrintLogToSerial(uint16_t ctime) {
   PrintLogPair(enc_cnt[0], enc_cnt[1]); 
   PrintLogPair(trg_rate[0], trg_rate[1]);
   PrintLogPair(enc_rate[0], enc_rate[1]);
-  PrintLogPair(enc_rate_opt[0], enc_rate_opt[1]); // Kalman
+  //PrintLogPair(enc_rate_opt[0], enc_rate_opt[1]); // Kalman
   Serial.print(":");
   PrintLogPair(trg_rate[0]-enc_rate[0], trg_rate[1]-enc_rate[1]);
   PrintLogPair(d_err[0], d_err[1]);
