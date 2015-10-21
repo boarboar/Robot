@@ -35,6 +35,7 @@ const unsigned int TASK_TIMEOUT = 20000;
 #define M_POW_MAX  120
 #define M_POW_STEP 2
 
+/*
 #define M_PID_KP   2
 #define M_PID_KI   1
 //#define M_PID_KD   2
@@ -42,9 +43,19 @@ const unsigned int TASK_TIMEOUT = 20000;
 #define M_PID_KD   4
 #define M_PID_DIV  4
 #define M_PID_KI_DIV  10
+*/
 
-#define M_K_K  8
-#define M_K_D 10
+#define M_PID_KP_0   50
+#define M_PID_KD_0  100
+#define M_PID_KI_0    4
+#define M_PID_DIV 100
+
+uint8_t M_PID_KP = M_PID_KP_0;
+uint8_t M_PID_KD = M_PID_KD_0;
+uint8_t M_PID_KI = M_PID_KI_0;
+
+//#define M_K_K  8
+//#define M_K_D 10
 
 #define BUF_SIZE 16
 
@@ -371,16 +382,17 @@ void PID(uint16_t ctime)
     for(i=0; i<2; i++) {
       //int8_t err=0, err_d=0;
       int8_t p_err=0;
-      uint8_t rate=(uint8_t)((uint16_t)enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
-      //enc_rate[i]=(uint8_t)((uint16_t)enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
+      //uint8_t rate=(uint8_t)((uint16_t)enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
+      enc_rate[i]=(uint8_t)((uint16_t)enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
       //enc_rate_opt[i]=(uint8_t)( ((uint16_t)enc_rate[i]*M_K_K+(uint16_t)enc_rate_opt[i]*(M_K_D-M_K_K))/M_K_D ); // Kalman
-      enc_rate[i]=(uint8_t)( ((uint16_t)rate*M_K_K+(uint16_t)enc_rate[i]*(M_K_D-M_K_K))/M_K_D ); // Kalman
+      //enc_rate[i]=(uint8_t)( ((uint16_t)rate*M_K_K+(uint16_t)enc_rate[i]*(M_K_D-M_K_K))/M_K_D ); // Kalman
       if(pid_cnt>=M_WUP_PID_CNT) { // do not correct for the first cycles - ca 100-200ms(warmup)
-        //err = (trg_rate[i]-last_enc_rate[i])+t_err[i];
-        p_err = trg_rate[i]-enc_rate[i];
+        p_err = (trg_rate[i]-enc_rate[i])+t_err[i];
+        //p_err = trg_rate[i]-enc_rate[i];
         d_err[i] = p_err-prev_err[i];
         int_err[i]=int_err[i]+p_err;
-        int16_t pow=cur_power[i]+((int16_t)p_err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI/M_PID_KI_DIV+(int16_t)d_err[i]*M_PID_KD)/M_PID_DIV;
+        //int16_t pow=cur_power[i]+((int16_t)p_err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI/M_PID_KI_DIV+(int16_t)d_err[i]*M_PID_KD)/M_PID_DIV;
+        int16_t pow=cur_power[i]+((int16_t)p_err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI+(int16_t)d_err[i]*M_PID_KD)/M_PID_DIV;
         if(pow<0) pow=0;
         if(pow>M_POW_MAX) pow=M_POW_MAX;
         if(cur_power[i]!=pow) analogWrite(i==0 ? M1_EN : M2_EN , pow); 
@@ -453,11 +465,11 @@ void PrintLogToSerial(uint16_t ctime) {
   PrintLogPair(enc_cnt[0], enc_cnt[1]); 
   PrintLogPair(trg_rate[0], trg_rate[1]);
   PrintLogPair(enc_rate[0], enc_rate[1]);
-  //PrintLogPair(enc_rate_opt[0], enc_rate_opt[1]); // Kalman
   Serial.print(":");
   PrintLogPair(trg_rate[0]-enc_rate[0], trg_rate[1]-enc_rate[1]);
+  PrintLogPair(t_err[0], t_err[1]);
   PrintLogPair(d_err[0], d_err[1]);
-  PrintLogPair(int_err[0]/M_PID_KI_DIV, int_err[1]/M_PID_KI_DIV);
+  PrintLogPair(int_err[0], int_err[1]);
   PrintLogPair(cur_power[0], cur_power[1]);
   Serial.print(":");
   //PrintLogPair(task.x/100, task.y/100); //in cm
@@ -473,7 +485,6 @@ void PrintLogToSerial(uint16_t ctime) {
   PrintLogPair(tx, ty); 
   PrintLogPair(RADN_TO_GRAD(task.bearing), RADN_TO_GRAD(task.bearing_abs));
   */
-  PrintLogPair(t_err[0], t_err[1]);
   Serial.println(); 
 }
 
@@ -536,6 +547,10 @@ void Notify() {
       addJson("CLB_P_LRT", pow_rot_low);
       addJson("CLB_R_LRT", enc_rot_rate_low);
       addJson("CLB_C_LRT", coast_rot_low);
+      delay(10);
+      addJson("M_PID_KP", M_PID_KP);
+      addJson("M_PID_KD", M_PID_KD);
+      addJson("M_PID_KI", M_PID_KI);
       break;      
     case EnumCmdWallLog: {
       Serial.print("\"LOGW\":\""); 
