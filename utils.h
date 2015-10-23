@@ -20,4 +20,5 @@ int16_t inva16(int16_t ax, int16_t ay, int16_t bx, int16_t by);
 void normalize(int16_t *px, int16_t *py);
 void addJson(const char *name, int16_t value);
 void addJsonArr16_2(const char *name, int16_t v1, int16_t v2);
+void addJsonBin(const char *name, int16_t value);
 

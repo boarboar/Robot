@@ -152,6 +152,15 @@ void addJson(const char *name, int16_t value) {
     Serial.print(v2);
     Serial.print("],");
  }
+
+void addJsonBin(const char *name, int16_t value) {
+  Serial.print("\"");
+  Serial.print(name);
+  Serial.print("\":");
+  Serial.print(value, BIN);
+  Serial.print(",");
+ }
+
  
  /*
  // returns VCC in .01 volts

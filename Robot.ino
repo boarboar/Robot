@@ -21,7 +21,6 @@ const unsigned int US_WALL_DIST=20;
 const unsigned int US_WALL_CNT_THR=100;
 const unsigned int M_COAST_TIME=400;
 const unsigned int M_WUP_PID_CNT=3;
-const int8_t M_PID_TERR_LIM=2;
 
 const unsigned int TASK_TIMEOUT = 20000; 
 
@@ -46,13 +45,16 @@ const unsigned int TASK_TIMEOUT = 20000;
 */
 
 #define M_PID_KP_0   50
-#define M_PID_KD_0  100
+//#define M_PID_KD_0  100
+#define M_PID_KD_0  150
 #define M_PID_KI_0    4
 #define M_PID_DIV 100
 
 uint8_t M_PID_KP = M_PID_KP_0;
 uint8_t M_PID_KD = M_PID_KD_0;
 uint8_t M_PID_KI = M_PID_KI_0;
+
+const int8_t M_PID_TERR_LIM=4; // 2
 
 //#define M_K_K  8
 //#define M_K_D 10
@@ -293,20 +295,26 @@ void StopTask()
 
 boolean TrackTask() 
 { 
+  bool res=false;
   if(F_ISTASKMOV()) {
     if((task.dist+2*task.adv_d)/10>=task.target) pid_to = PID_TIMEOUT_LOW;
-    return (task.dist+task.adv_d)/10>=task.target; //mm
+    //return (task.dist+task.adv_d)/10>=task.target; //mm
+    res = (task.dist+task.adv_d)/10>=task.target; //mm
   }
   else {
     if(task.target>0) { //clockwise
       if((task.angle+2*task.adv_a)>=task.target) pid_to = PID_TIMEOUT_LOW;
-      return task.angle+task.adv_a>=task.target;
+      //return task.angle+task.adv_a>=task.target;
+      res = task.angle+task.adv_a>=task.target;
     }
     else { //counterclockwise
       if((task.angle+2*task.adv_a)<=task.target) pid_to = PID_TIMEOUT_LOW;
-      return task.angle+task.adv_a<=task.target;
+      //return task.angle+task.adv_a<=task.target;
+      res = task.angle+task.adv_a<=task.target;
     }
   }
+  if(res) F_SETTFIN();
+  return res;
 }
   
 void ReadEnc()
@@ -539,6 +547,7 @@ void Notify() {
       addJsonArr16_2("TD", (int16_t)(task.dist/100), (int16_t)(task.adv_d/100)); // in cm 
       addJsonArr16_2("TA", RADN_TO_GRAD(task.angle), RADN_TO_GRAD(task.adv_a)); // in deg
       addJson("L", last_dur); 
+      addJsonBin("FLG", flags); 
       break;
    case EnumCmdSetParam:    
       addJsonArr16_2("CLB_P_LH", pow_low, pow_high);   
@@ -582,7 +591,11 @@ boolean CheckCommandTimeout(uint16_t t)
   unsigned long commandTime = millis();
   if ( commandTime >= lastCommandTime) commandTime -= lastCommandTime; 
   else lastCommandTime = 0;
-  return commandTime > t;
+  if(commandTime > t) {
+    F_SETTMO();
+    return true;
+  }  
+  return false;
 }
 
 void readUSDist() {
@@ -679,7 +692,21 @@ int8_t Parse()
   else if((pos=Match(buf, bytes, "T"))) {
     return EnumCmdTest;
   }
-  else if((pos=Match(buf, bytes, "P"))) {
+  else if((pos=Match(buf, bytes, "P"))) {    
+    if(pos>=bytes || buf[pos]!=':') return EnumCmdSetParam;
+    // P:D=100
+    pos++;
+    if(pos>=bytes) return EnumErrorBadSyntax;
+    char param=buf[pos];
+    pos++;
+    if(pos>=bytes || buf[pos]!='=') return EnumErrorBadSyntax;
+    pos = bctoi(buf, pos, &m);
+    switch(param) {
+      case 'P' : M_PID_KP=m; break;
+      case 'D' : M_PID_KD=m; break;
+      case 'I' : M_PID_KI=m; break;
+      default:;
+    }
     return EnumCmdSetParam;
   }
   else return EnumErrorUnknown;
