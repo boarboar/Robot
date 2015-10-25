@@ -10,7 +10,8 @@ const unsigned int PID_TIMEOUT_LOW = 100;
 const unsigned int RESP_TIMEOUT = 25; // C_T+R_T >= 75ms
 const unsigned int CMD_TIMEOUT = 600; 
 const unsigned int RATE_SAMPLE_PERIOD = 400;
-const unsigned int RATE_SAMPLE_TARGET_LOW = 3;
+const unsigned int RATE_SAMPLE_TARGET_LOW = 6;
+const unsigned int RATE_SAMPLE_TARGET_ROT_LOW = 1;
 const unsigned int RATE_SAMPLE_TARGET_HIGH = 18;
 const unsigned int WHEEL_CHGSTATES = 40;
 const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
@@ -160,7 +161,7 @@ void setup()
   Calibrate(RATE_SAMPLE_TARGET_HIGH, &pow_high, &enc_rate_high, &coast_high, false);
 
   pow_rot_low=M_POW_LOWEST_LIM;
-  Calibrate(RATE_SAMPLE_TARGET_LOW, &pow_rot_low, &enc_rot_rate_low, &coast_rot_low, true);
+  Calibrate(RATE_SAMPLE_TARGET_ROT_LOW, &pow_rot_low, &enc_rot_rate_low, &coast_rot_low, true);
   
   for(i=0; i<WALL_LOG_SZ; i++) logw[i].adv=logw[i].usd=0;
 
@@ -700,6 +701,7 @@ int8_t Parse()
     char param=buf[pos];
     pos++;
     if(pos>=bytes || buf[pos]!='=') return EnumErrorBadSyntax;
+    pos++;
     pos = bctoi(buf, pos, &m);
     switch(param) {
       case 'P' : M_PID_KP=m; break;
