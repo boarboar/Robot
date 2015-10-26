@@ -10,8 +10,8 @@ const unsigned int PID_TIMEOUT_LOW = 100;
 const unsigned int RESP_TIMEOUT = 25; // C_T+R_T >= 75ms
 const unsigned int CMD_TIMEOUT = 600; 
 const unsigned int RATE_SAMPLE_PERIOD = 400;
-const unsigned int RATE_SAMPLE_TARGET_LOW = 6;
-const unsigned int RATE_SAMPLE_TARGET_ROT_LOW = 1;
+const unsigned int RATE_SAMPLE_TARGET_LOW = 8;
+const unsigned int RATE_SAMPLE_TARGET_ROT_LOW = 2;
 const unsigned int RATE_SAMPLE_TARGET_HIGH = 18;
 const unsigned int WHEEL_CHGSTATES = 40;
 const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
@@ -200,7 +200,7 @@ void loop()
       F_CLEARTASK();
       lastCommandTime = millis();        
       last_dur=0;
-      if(!(us_dist<US_WALL_DIST && drv_dir[0]+drv_dir[1]==2)) StartDrive();
+      if(!(us_dist<US_WALL_DIST && drv_dir[0]+drv_dir[1]==2)) StartDrive(false);
     } else if(cmdResult==EnumCmdContinueDrive && F_ISDRIVE()) {
       last_dur=millis()-lastCommandTime;
       lastCommandTime = millis();
@@ -227,13 +227,27 @@ void InitPos() {
   angle=0;
 }      
       
-void StartDrive() 
+void StartDrive(boolean rot) 
 {
+  uint8_t pow_low_d;
+  uint8_t enc_rate_low_d;
+  if(rot) {
+    pow_low_d=pow_rot_low;
+    enc_rate_low_d=enc_rot_rate_low;
+  } else {
+    pow_low_d=pow_low;
+    enc_rate_low_d=enc_rate_low;
+  }
   for(int i=0; i<2; i++) {
     if(drv_dir[i]) {
        cur_power[i]=cmd_power[i];
        if(cur_power[i]>pow_high) cur_power[i]=pow_high;
+       /*
+       if(cur_power[i]<pow_low) cur_power[i]=pow_low;
        trg_rate[i]=map(cur_power[i], pow_low, pow_high, enc_rate_low, enc_rate_high);
+       */
+       if(cur_power[i]<pow_low_d) cur_power[i]=pow_low_d;
+       trg_rate[i]=map(cur_power[i], pow_low_d, pow_high, enc_rate_low_d, enc_rate_high);
      } else {
        trg_rate[i]=0;
        cur_power[i]=0;
@@ -268,6 +282,7 @@ void StopDrive()
 
 void StartTask() 
 {
+  boolean rot=false;
   //task.nx=0; task.ny=V_NORM;
   //task.x=task.y=0; 
   task.angle=task.dist=task.adv_d=task.adv_a=0;
@@ -278,6 +293,7 @@ void StartTask()
     task.x_abs=x+(int32_t)nx*(task.target)/V_NORM*10; //10th mm
     task.y_abs=y+(int32_t)ny*(task.target)/V_NORM*10; //10th mm
   } else { // rot
+    rot=true;
     cmd_power[0]=cmd_power[1]=pow_rot_low;  
     if(task.target>0) { // clockwise
       drv_dir[0]=1; drv_dir[1]=2; 
@@ -285,7 +301,7 @@ void StartTask()
       drv_dir[0]=2; drv_dir[1]=1; 
     }
   }
-  StartDrive();
+  StartDrive(rot);
 }
 
 void StopTask() 
