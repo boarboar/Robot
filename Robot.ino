@@ -709,9 +709,6 @@ int8_t Parse()
     return EnumCmdRst;
   }
   //else if((pos=Match(buf, bytes, "T"))) {
-  else if(cmdReader.Match("T")) {      
-    return EnumCmdTest;
-  }
   //else if((pos=Match(buf, bytes, "TM"))) {
   else if(cmdReader.Match("TM")) {      
     /*
@@ -745,7 +742,7 @@ int8_t Parse()
     // P:D=100
     //if(pos>=bytes || buf[pos]!=':') return EnumCmdSetParam;
     //pos++;
-    if(!cmdReader.Match(":")) return EnumErrorBadSyntax;
+    if(!cmdReader.Match(":")) return EnumCmdSetParam; // output
     /*
     if(pos>=bytes) return EnumErrorBadSyntax;
     char param=buf[pos];
@@ -767,6 +764,9 @@ int8_t Parse()
       default:;
     }
     return EnumCmdSetParam;
+  }
+  else if(cmdReader.Match("T")) {      
+    return EnumCmdTest;
   }
   else return EnumErrorUnknown;
 }
