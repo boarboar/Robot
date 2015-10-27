@@ -1,5 +1,6 @@
 #include "utils.h"
 
+/*
 uint8_t Match(char *buf, uint8_t bytes, const char *cmd) 
 {
   uint8_t pos=0;
@@ -10,7 +11,8 @@ uint8_t Match(char *buf, uint8_t bytes, const char *cmd)
   if(!*cmd) return pos;
   else return 0;
 }
-
+*/
+/*
 uint8_t bctoi(char *buf, uint8_t index, int16_t *val) 
 {
   int16_t i=0;
@@ -30,6 +32,7 @@ uint8_t bctoi(char *buf, uint8_t index, int16_t *val)
   *val=sign ? -i : i;
   return index;
 }
+*/
 
 uint16_t isqrt32(uint32_t n)  
     {  

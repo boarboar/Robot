@@ -2,6 +2,7 @@
 #include "utils.h"
 #include "robot_hw.h"
 #include "robot_flags.h"
+#include "robot_reader.h"
 
 // common vars 
 const unsigned int PID_TIMEOUT_HIGH = 200;
@@ -47,7 +48,7 @@ const unsigned int TASK_TIMEOUT = 20000;
 
 #define M_PID_KP_0   50
 //#define M_PID_KD_0  100
-#define M_PID_KD_0  150
+#define M_PID_KD_0  200
 #define M_PID_KI_0    4
 #define M_PID_DIV 100
 
@@ -60,7 +61,7 @@ const int8_t M_PID_TERR_LIM=4; // 2
 //#define M_K_K  8
 //#define M_K_D 10
 
-#define BUF_SIZE 16
+//#define BUF_SIZE 16
 
 struct TaskStruct {
   int32_t target;  // in mm or nrads
@@ -76,8 +77,8 @@ struct TaskStruct {
   int16_t bearing_abs;
 } task;
 
-char buf[BUF_SIZE];
-uint8_t bytes = 0;
+//char buf[BUF_SIZE];
+//uint8_t bytes = 0;
 
 // cmd
 uint32_t lastCommandTime; // =lastTaskTime
@@ -124,6 +125,7 @@ struct __attribute__((__packed__)) WallRec {
   int8_t usd; //cm
 } logw[WALL_LOG_SZ]; // candidate for calman filter
 
+CommandReader cmdReader;
 
 // volatile encoder section
 volatile uint8_t v_enc_cnt[2]={0,0}; 
@@ -165,11 +167,11 @@ void setup()
   
   for(i=0; i<WALL_LOG_SZ; i++) logw[i].adv=logw[i].usd=0;
 
-  while (Serial.available()) Serial.read();  // eat garbage
+  //while (Serial.available()) Serial.read();  // eat garbage
+  
+  cmdReader.Init();
   
   lastCommandTime = lastPidTime = millis();  
-  
-  //delay(RATE_SAMPLE_PERIOD*3); // let it stop
   
   InitPos();
 }
@@ -192,9 +194,10 @@ void loop()
     lastPidTime=cycleTime;
   } // PID cycle 
           
-  if(ReadSerialCommand()) {
+  if(cmdReader.ReadSerialCommand()) {
     cmdResult = Parse(); 
-    bytes = 0; // empty input buffer (only one command at a time)
+    cmdReader.Reset();
+    //bytes = 0; // empty input buffer (only one command at a time)
     cmd_id++;  
     if(cmdResult==EnumCmdDrive || (cmdResult==EnumCmdContinueDrive && !F_ISDRIVE())) {
       F_CLEARTASK();
@@ -635,6 +638,7 @@ void readUSDist() {
 }
 //=======================================
 
+/*
 // read serial data into buffer. execute command
 boolean ReadSerialCommand()
 {
@@ -658,20 +662,26 @@ boolean ReadSerialCommand()
   return false;
 }
 
+*/
+
 int8_t Parse()
 {  
-  byte pos;
+  //byte pos;
   int16_t m;
-  
-  if((pos=Match(buf, bytes, "D"))) {    
+  cmdReader.StartParse();
+  //if((pos=Match(buf, bytes, "D"))) {    
+  if(cmdReader.Match("D")) {    
     // Expect: "D=100,100"
     boolean chg=false;
-    if(pos>=bytes || buf[pos]!='=') return EnumErrorBadSyntax;
+    //if(pos>=bytes || buf[pos]!='=') return EnumErrorBadSyntax;
+    if(!cmdReader.Match("=")) return EnumErrorBadSyntax;
     for(int i=0; i<2; i++) {      
-      pos++;    
-      pos = bctoi(buf, pos, &m);      
+      //pos++;    
+      //pos = bctoi(buf, pos, &m);      
+      m=cmdReader.ReadInt();
       if(m<-255 || m>254) return EnumErrorBadParam;
-      if(i==0 && buf[pos] !=',') return EnumErrorBadSyntax;
+      //if(i==0 && buf[pos] !=',') return EnumErrorBadSyntax;
+      if(i==0 && !cmdReader.Match(",")) return EnumErrorBadSyntax;
       if(m==0)       { if(cmd_power[i]) { cmd_power[i]=0; chg=true;}} 
       else if (m>0)  { if(m<pow_low) m=pow_low; if(m>M_POW_HIGH_LIM) m=M_POW_HIGH_LIM; if(drv_dir[i]!=1 || cmd_power[i]!=m) { cmd_power[i]=m; drv_dir[i]=1; chg=true;} } 
       else           { m=-m; if(m<pow_low) m=pow_low; if(m>M_POW_HIGH_LIM) m=M_POW_HIGH_LIM; if(drv_dir[i]!=2 || cmd_power[i]!=m) {cmd_power[i]=m; drv_dir[i]=2; chg=true;} }  
@@ -679,46 +689,70 @@ int8_t Parse()
     if(!cmd_power[0] && !cmd_power[1]) return EnumCmdStop;
     return chg ? EnumCmdDrive : EnumCmdContinueDrive;
   } 
-  else if((pos=Match(buf, bytes, "L"))) {
+  //else if((pos=Match(buf, bytes, "L"))) {
+  else if(cmdReader.Match("L")) {    
     return EnumCmdLog;
   }
-  else if((pos=Match(buf, bytes, "W"))) {
+  //else if((pos=Match(buf, bytes, "W"))) {
+  else if(cmdReader.Match("W")) {      
     return EnumCmdWallLog;
   } 
-  else if((pos=Match(buf, bytes, "R"))) {
+  //else if((pos=Match(buf, bytes, "R"))) {
+  else if(cmdReader.Match("R")) {    
     return EnumCmdRst;
   }
-  else if((pos=Match(buf, bytes, "TM"))) {
+  //else if((pos=Match(buf, bytes, "T"))) {
+  else if(cmdReader.Match("T")) {      
+    return EnumCmdTest;
+  }
+  //else if((pos=Match(buf, bytes, "TM"))) {
+  else if(cmdReader.Match("TM")) {      
+    /*
     if(pos>=bytes || buf[pos]!='=') return EnumErrorBadSyntax;
     pos++;
     pos = bctoi(buf, pos, &m);      
+    */
+    if(!cmdReader.Match("=")) return EnumErrorBadSyntax;
+    m=cmdReader.ReadInt();
     if(!m) return EnumErrorBadParam;
     task.target=m*10; // mm
     F_SETTASKMOV();
     return EnumCmdTaskMove;
   }
-  else if((pos=Match(buf, bytes, "TR"))) {
+  //else if((pos=Match(buf, bytes, "TR"))) {
+  else if(cmdReader.Match("TR")) {        
+    /*
     if(pos>=bytes || buf[pos]!='=') return EnumErrorBadSyntax;
     pos++;
     pos = bctoi(buf, pos, &m);      
+    */
+    if(!cmdReader.Match("=")) return EnumErrorBadSyntax;
+    m=cmdReader.ReadInt();
     if(!m) return EnumErrorBadParam;
     task.target=GRAD_TO_RADN(m);  // rad norm  
     F_SETTASKROT();
     return EnumCmdTaskRotate;
   }
-  else if((pos=Match(buf, bytes, "T"))) {
-    return EnumCmdTest;
-  }
-  else if((pos=Match(buf, bytes, "P"))) {    
-    if(pos>=bytes || buf[pos]!=':') return EnumCmdSetParam;
+  //else if((pos=Match(buf, bytes, "P"))) {    
+  else if(cmdReader.Match("P")) {        
     // P:D=100
-    pos++;
+    //if(pos>=bytes || buf[pos]!=':') return EnumCmdSetParam;
+    //pos++;
+    if(!cmdReader.Match(":")) return EnumErrorBadSyntax;
+    /*
     if(pos>=bytes) return EnumErrorBadSyntax;
     char param=buf[pos];
     pos++;
+    */
+    char param=cmdReader.ReadChar();
+    if(!param) return EnumErrorBadSyntax;
+    /*
     if(pos>=bytes || buf[pos]!='=') return EnumErrorBadSyntax;
     pos++;
     pos = bctoi(buf, pos, &m);
+    */
+    if(!cmdReader.Match("=")) return EnumErrorBadSyntax;
+    m=cmdReader.ReadInt();
     switch(param) {
       case 'P' : M_PID_KP=m; break;
       case 'D' : M_PID_KD=m; break;
