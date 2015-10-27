@@ -310,6 +310,7 @@ void StartTask()
 void StopTask() 
 {
   StopDrive();
+  LogTaskComplete();
   F_CLEARTASK();
 }
 
@@ -521,6 +522,12 @@ void PrintLog(int16_t v) {
 }
 void PrintLogPair(int16_t v1, int16_t v2) {
   Serial.print("("); Serial.print(v1);Serial.print(","); Serial.print(v2); Serial.print("),"); 
+}
+
+void LogTaskComplete() {
+  Serial.print("@LTC:"); 
+  PrintLog(last_dur);
+  Serial.println(); 
 }
 
 void Notify() {
