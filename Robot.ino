@@ -23,10 +23,7 @@ const unsigned int US_WALL_DIST=20;
 const unsigned int US_WALL_CNT_THR=100;
 const unsigned int M_COAST_TIME=400;
 const unsigned int M_WUP_PID_CNT=3;
-
 const unsigned int TASK_TIMEOUT = 20000; 
-
-// tracking
 
 #define CHGST_TO_MM_10(CNT)  ((int32_t)(CNT)*V_NORM_PI2*WHEEL_RAD_MM_10/WHEEL_CHGSTATES/10000)
 
@@ -36,21 +33,10 @@ const unsigned int TASK_TIMEOUT = 20000;
 #define M_POW_MAX  120
 #define M_POW_STEP 2
 
-/*
-#define M_PID_KP   2
-#define M_PID_KI   1
-//#define M_PID_KD   2
-//#define M_PID_DIV  4
-#define M_PID_KD   4
-#define M_PID_DIV  4
-#define M_PID_KI_DIV  10
-*/
-
-#define M_PID_KP_0   50
-//#define M_PID_KD_0  100
-#define M_PID_KD_0  200
-#define M_PID_KI_0    4
-#define M_PID_DIV 100
+#define M_PID_KP_0   25
+#define M_PID_KD_0  140
+#define M_PID_KI_0    2
+#define M_PID_DIV   50
 
 uint8_t M_PID_KP = M_PID_KP_0;
 uint8_t M_PID_KD = M_PID_KD_0;
@@ -58,14 +44,11 @@ uint8_t M_PID_KI = M_PID_KI_0;
 
 const int8_t M_PID_TERR_LIM=4; // 2
 
-//#define M_K_K  8
-//#define M_K_D 10
-
-//#define BUF_SIZE 16
+#define SENS_K_K  5
+#define SENS_K_DIV 10
 
 struct TaskStruct {
-  int32_t target;  // in mm or nrads
-  
+  int32_t target;  // in mm or nrads  
   //int16_t nx, ny;    // NORM
   //int32_t x, y;      //in 10thmm - up to 320 cm
   int32_t angle;        // in nrads
@@ -76,9 +59,6 @@ struct TaskStruct {
   //int16_t bearing;
   int16_t bearing_abs;
 } task;
-
-//char buf[BUF_SIZE];
-//uint8_t bytes = 0;
 
 // cmd
 uint32_t lastCommandTime; // =lastTaskTime
@@ -123,6 +103,7 @@ int8_t t_err[2]={0,0};
 struct __attribute__((__packed__)) WallRec {
   int8_t adv; //cm
   int8_t usd; //cm
+  int8_t usd_k; //cm - kalman opt
 } logw[WALL_LOG_SZ]; // candidate for calman filter
 
 CommandReader cmdReader;
@@ -166,8 +147,6 @@ void setup()
   Calibrate(RATE_SAMPLE_TARGET_ROT_LOW, &pow_rot_low, &enc_rot_rate_low, &coast_rot_low, true);
   
   for(i=0; i<WALL_LOG_SZ; i++) logw[i].adv=logw[i].usd=0;
-
-  //while (Serial.available()) Serial.read();  // eat garbage
   
   cmdReader.Init();
   
@@ -197,7 +176,6 @@ void loop()
   if(cmdReader.ReadSerialCommand()) {
     cmdResult = Parse(); 
     cmdReader.Reset();
-    //bytes = 0; // empty input buffer (only one command at a time)
     cmd_id++;  
     if(cmdResult==EnumCmdDrive || (cmdResult==EnumCmdContinueDrive && !F_ISDRIVE())) {
       F_CLEARTASK();
@@ -319,18 +297,15 @@ boolean TrackTask()
   bool res=false;
   if(F_ISTASKMOV()) {
     if((task.dist+2*task.adv_d)/10>=task.target) pid_to = PID_TIMEOUT_LOW;
-    //return (task.dist+task.adv_d)/10>=task.target; //mm
     res = (task.dist+task.adv_d)/10>=task.target; //mm
   }
   else {
     if(task.target>0) { //clockwise
       if((task.angle+2*task.adv_a)>=task.target) pid_to = PID_TIMEOUT_LOW;
-      //return task.angle+task.adv_a>=task.target;
       res = task.angle+task.adv_a>=task.target;
     }
     else { //counterclockwise
       if((task.angle+2*task.adv_a)<=task.target) pid_to = PID_TIMEOUT_LOW;
-      //return task.angle+task.adv_a<=task.target;
       res = task.angle+task.adv_a<=task.target;
     }
   }
@@ -409,18 +384,14 @@ void PID(uint16_t ctime)
       }     
     }
     for(i=0; i<2; i++) {
-      //int8_t err=0, err_d=0;
       int8_t p_err=0;
-      //uint8_t rate=(uint8_t)((uint16_t)enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
       enc_rate[i]=(uint8_t)((uint16_t)enc_cnt[i]*RATE_SAMPLE_PERIOD/ctime);    
-      //enc_rate_opt[i]=(uint8_t)( ((uint16_t)enc_rate[i]*M_K_K+(uint16_t)enc_rate_opt[i]*(M_K_D-M_K_K))/M_K_D ); // Kalman
       //enc_rate[i]=(uint8_t)( ((uint16_t)rate*M_K_K+(uint16_t)enc_rate[i]*(M_K_D-M_K_K))/M_K_D ); // Kalman
       if(pid_cnt>=M_WUP_PID_CNT) { // do not correct for the first cycles - ca 100-200ms(warmup)
         p_err = (trg_rate[i]-enc_rate[i])+t_err[i];
         //p_err = trg_rate[i]-enc_rate[i];
         d_err[i] = p_err-prev_err[i];
         int_err[i]=int_err[i]+p_err;
-        //int16_t pow=cur_power[i]+((int16_t)p_err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI/M_PID_KI_DIV+(int16_t)d_err[i]*M_PID_KD)/M_PID_DIV;
         int16_t pow=cur_power[i]+((int16_t)p_err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI+(int16_t)d_err[i]*M_PID_KD)/M_PID_DIV;
         if(pow<0) pow=0;
         if(pow>M_POW_MAX) pow=M_POW_MAX;
@@ -451,16 +422,13 @@ void Calibrate(uint8_t targ, uint8_t *ppow, uint8_t *pencr, uint8_t *pcoast, uin
   // coasting
   StopDrive();
   digitalWrite(RED_LED, LOW);  
-  //uint8_t encsum=0;
   uint8_t i=0;
   task.dist=0;
   task.angle=0;
   while((enc_cnt[0]+enc_cnt[1])>0 && i++<10) {
-    //encsum += (last_enc_cnt[0]+last_enc_cnt[1])/2;
     delay(RATE_SAMPLE_PERIOD);
     ReadEnc();
   }
-  //*pcoast = CHGST_TO_MM_10(encsum)/100; // in cm
   if(rot)
     *pcoast = RADN_TO_GRAD(task.angle);
   else 
@@ -584,14 +552,18 @@ void Notify() {
       addJson("CLB_R_LRT", enc_rot_rate_low);
       addJson("CLB_C_LRT", coast_rot_low);
       delay(10);
-      addJson("M_PID_KP", M_PID_KP);
-      addJson("M_PID_KD", M_PID_KD);
-      addJson("M_PID_KI", M_PID_KI);
+      addJson("KP", M_PID_KP);
+      addJson("KD", M_PID_KD);
+      addJson("KI", M_PID_KI);
+      addJson("KDIV", M_PID_DIV);
       break;      
     case EnumCmdWallLog: {
       Serial.print("\"LOGW\":\""); 
       for(uint8_t i=WALL_LOG_SZ; i>0; i--) { 
-        PrintLogPair(logw[i-1].adv, logw[i-1].usd); 
+        //PrintLogPair(logw[i-1].adv, logw[i-1].usd); 
+        Serial.print(":");
+        PrintLog(logw[i-1].adv);
+        PrintLogPair(logw[i-1].usd, logw[i-1].usd_k); 
         delay(10);
       }
       Serial.print("\",");
@@ -601,10 +573,11 @@ void Notify() {
     case EnumCmdTaskRotate:           
       addJson("FT", flags&R_F_ISTASK);
       addJson("FM", flags&R_F_ISTASKMOV);
-      addJson("TG", task.target);
       if(F_ISTASKMOV()) {
+        addJson("TG", task.target/10);
         addJsonArr16_2("TABSX", task.x_abs/100, task.y_abs/100); // absolute, in cm        
       } else {
+        addJson("TG", RADN_TO_GRAD(task.target));
         addJson("TABSA", RADN_TO_GRAD(angle+task.target)); // absolute
       }
       break;
@@ -641,53 +614,22 @@ void readUSDist() {
       for(uint8_t i=WALL_LOG_SZ-1; i>=1; i--) logw[i]=logw[i-1];
       logw[0].adv=task.adv_d/100; //cm
       logw[0].usd=usd_prev-us_dist;
+      logw[0].usd_k=(uint8_t)( ((uint16_t)logw[0].usd*SENS_K_K+(uint16_t)logw[0].adv*(SENS_K_DIV-SENS_K_K))/SENS_K_DIV ); // Kalman
   }
 }
 //=======================================
 
-/*
-// read serial data into buffer. execute command
-boolean ReadSerialCommand()
-{
-  while (Serial.available() && bytes < BUF_SIZE)
-  {
-    buf[bytes] = Serial.read();
-    if (buf[bytes] == 10 || buf[bytes] == 13)
-    {
-      if (bytes > 0) { 
-        buf[bytes]=0; 
-        return true; 
-      } 
-      return false; // skip 10 or 13 left         
-    }
-    bytes++;
-  }
-  if(bytes>=BUF_SIZE) { 
-    bytes=0; //overflow, probably caused hang up at start...    
-    return true; // this is for test only... !!!!!!!!!!!!!!!!!!!!!!!!!!
-  }
-  return false;
-}
-
-*/
-
 int8_t Parse()
 {  
-  //byte pos;
   int16_t m;
   cmdReader.StartParse();
-  //if((pos=Match(buf, bytes, "D"))) {    
   if(cmdReader.Match("D")) {    
     // Expect: "D=100,100"
     boolean chg=false;
-    //if(pos>=bytes || buf[pos]!='=') return EnumErrorBadSyntax;
     if(!cmdReader.Match("=")) return EnumErrorBadSyntax;
     for(int i=0; i<2; i++) {      
-      //pos++;    
-      //pos = bctoi(buf, pos, &m);      
       m=cmdReader.ReadInt();
       if(m<-255 || m>254) return EnumErrorBadParam;
-      //if(i==0 && buf[pos] !=',') return EnumErrorBadSyntax;
       if(i==0 && !cmdReader.Match(",")) return EnumErrorBadSyntax;
       if(m==0)       { if(cmd_power[i]) { cmd_power[i]=0; chg=true;}} 
       else if (m>0)  { if(m<pow_low) m=pow_low; if(m>M_POW_HIGH_LIM) m=M_POW_HIGH_LIM; if(drv_dir[i]!=1 || cmd_power[i]!=m) { cmd_power[i]=m; drv_dir[i]=1; chg=true;} } 
@@ -696,26 +638,16 @@ int8_t Parse()
     if(!cmd_power[0] && !cmd_power[1]) return EnumCmdStop;
     return chg ? EnumCmdDrive : EnumCmdContinueDrive;
   } 
-  //else if((pos=Match(buf, bytes, "L"))) {
   else if(cmdReader.Match("L")) {    
     return EnumCmdLog;
   }
-  //else if((pos=Match(buf, bytes, "W"))) {
   else if(cmdReader.Match("W")) {      
     return EnumCmdWallLog;
   } 
-  //else if((pos=Match(buf, bytes, "R"))) {
   else if(cmdReader.Match("R")) {    
     return EnumCmdRst;
   }
-  //else if((pos=Match(buf, bytes, "T"))) {
-  //else if((pos=Match(buf, bytes, "TM"))) {
   else if(cmdReader.Match("TM")) {      
-    /*
-    if(pos>=bytes || buf[pos]!='=') return EnumErrorBadSyntax;
-    pos++;
-    pos = bctoi(buf, pos, &m);      
-    */
     if(!cmdReader.Match("=")) return EnumErrorBadSyntax;
     m=cmdReader.ReadInt();
     if(!m) return EnumErrorBadParam;
@@ -723,13 +655,7 @@ int8_t Parse()
     F_SETTASKMOV();
     return EnumCmdTaskMove;
   }
-  //else if((pos=Match(buf, bytes, "TR"))) {
   else if(cmdReader.Match("TR")) {        
-    /*
-    if(pos>=bytes || buf[pos]!='=') return EnumErrorBadSyntax;
-    pos++;
-    pos = bctoi(buf, pos, &m);      
-    */
     if(!cmdReader.Match("=")) return EnumErrorBadSyntax;
     m=cmdReader.ReadInt();
     if(!m) return EnumErrorBadParam;
@@ -737,24 +663,11 @@ int8_t Parse()
     F_SETTASKROT();
     return EnumCmdTaskRotate;
   }
-  //else if((pos=Match(buf, bytes, "P"))) {    
   else if(cmdReader.Match("P")) {        
     // P:D=100
-    //if(pos>=bytes || buf[pos]!=':') return EnumCmdSetParam;
-    //pos++;
     if(!cmdReader.Match(":")) return EnumCmdSetParam; // output
-    /*
-    if(pos>=bytes) return EnumErrorBadSyntax;
-    char param=buf[pos];
-    pos++;
-    */
     char param=cmdReader.ReadChar();
     if(!param) return EnumErrorBadSyntax;
-    /*
-    if(pos>=bytes || buf[pos]!='=') return EnumErrorBadSyntax;
-    pos++;
-    pos = bctoi(buf, pos, &m);
-    */
     if(!cmdReader.Match("=")) return EnumErrorBadSyntax;
     m=cmdReader.ReadInt();
     switch(param) {
