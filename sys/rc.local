@@ -1,0 +1,16 @@
+# Put your custom commands here that should be executed once
+# the system init finished. By default this file does nothing.
+led_ping_diag &
+#ser2net
+#stty -F /dev/ttyUSB0 115200
+#stty -F /dev/ttyUSB1 115200
+#stty -F /dev/ttyUSB2 115200
+#stty -F /dev/ttyUSB3 115200
+#stty -F /dev/ttyUSB4 115200
+#stty -F /dev/ttyUSB5 115200
+stty -F /dev/ttyATH0 cs8 38400 -ignbrk -brkint -icrnl -imaxbel -opost -onlcr -isig -icanon -iexten -echo -echoe -echok -echoctl -echoke noflsh -ixon -crtscts -hupcl 
+cat /dev/ttyATH0 | tee /tmp/ttycpy.log | awk '/CQ/' > /root/pipe&
+
+arping -A -I wlan0 `uci get network.wifi_sta.ipaddr` >/dev/null 2>/dev/null &
+
+exit 0
