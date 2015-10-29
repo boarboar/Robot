@@ -420,11 +420,12 @@ void Calibrate(uint8_t targ, uint8_t *ppow, uint8_t *pencr, uint8_t *pcoast, uin
   *ppow=pow;
   *pencr = (enc_cnt[0]+enc_cnt[1])/2;
   // coasting
-  StopDrive();
+  delay(RATE_SAMPLE_PERIOD);
   digitalWrite(RED_LED, LOW);  
   uint8_t i=0;
   task.dist=0;
   task.angle=0;
+  StopDrive();
   while((enc_cnt[0]+enc_cnt[1])>0 && i++<10) {
     delay(RATE_SAMPLE_PERIOD);
     ReadEnc();
