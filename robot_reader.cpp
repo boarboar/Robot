@@ -31,15 +31,17 @@ boolean CommandReader::ReadSerialCommand()
 }
 
 boolean CommandReader::Match(const char *cmd) {
+  uint8_t savepos=pos;
   while(pos<bytes && *cmd && buf[pos]==*cmd) {
     pos++;
     cmd++;
   }
-  /*
-  if(!*cmd) return pos;
-  else return 0;
-  */
-  return *cmd==0;
+  if(!*cmd) return true;
+  else {
+    pos=savepos;
+    return false;
+  }
+  //return *cmd==0;
 }
 
 //boolean CommandReader::ReadInt(int16_t *val) {
