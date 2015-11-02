@@ -108,6 +108,9 @@ CommandReader cmdReader;
 // volatile encoder section
 volatile uint8_t v_enc_cnt[2]={0,0}; 
 volatile uint8_t v_es[2]={0,0};
+volatile uint16_t v_enc_cnt_2[2]={0,0}; // test
+
+uint16_t enc_cnt_2[2]={0,0}; // test
 
 void setup()
 { 
@@ -155,7 +158,11 @@ void setup()
 void loop()
 {  
   uint32_t cycleTime = millis();
-  if (F_ISDRIVE() && (us_dist<US_WALL_DIST && drv_dir[0]+drv_dir[1]==2)) StopDrive(); 
+  if (F_ISDRIVE() && (us_dist<US_WALL_DIST && drv_dir[0]+drv_dir[1]==2)) {
+    F_SETWALL();
+    if(F_ISTASKANY()) StopTask();
+    else StopDrive(); 
+  }
   if ( cycleTime < lastPidTime) lastPidTime=0; // wraparound, not correct   
   uint16_t ctime = cycleTime - lastPidTime;
   if ( ctime >= pid_to) { // PID cycle    
@@ -203,6 +210,8 @@ void InitPos() {
   nx=0; ny=V_NORM;
   dist=diff=0;
   angle=0;
+  v_enc_cnt_2[0]=v_enc_cnt_2[1]=0;
+  enc_cnt_2[0]=enc_cnt_2[1]=0;
 }      
       
 void StartDrive(boolean rot) 
@@ -322,6 +331,9 @@ void ReadEnc()
     v_enc_cnt[i] = 0;
     if(drv_dir[i]==2) s[i]=-enc_cnt[i];
     else s[i]=enc_cnt[i];
+    
+    enc_cnt_2[i]+=enc_cnt[i];
+    
   }
 
   // tracking 
@@ -493,6 +505,7 @@ void PrintLogPair(int16_t v1, int16_t v2) {
 void LogTaskComplete() {
   Serial.print("@LTC:"); 
   PrintLog(last_dur);
+  addJsonBin("FLG", flags); 
   Serial.println(); 
 }
 
@@ -539,8 +552,11 @@ void Notify() {
       addJsonArr16_2("DX", (int16_t)((task.x_abs-x)/100), (int16_t)((task.y_abs-y)/100)); // in cm
       addJsonArr16_2("TD", (int16_t)(task.dist/100), (int16_t)(task.adv_d/100)); // in cm 
       addJsonArr16_2("TA", RADN_TO_GRAD(task.angle), RADN_TO_GRAD(task.adv_a)); // in deg
-      addJson("L", last_dur); 
+      delay(10);
+      addJson("L", last_dur);       
       addJsonBin("FLG", flags); 
+      addJsonArr16_2("ECC2", enc_cnt_2[0], enc_cnt_2[1]);
+      addJsonArr16_2("ECCV2", v_enc_cnt_2[0], v_enc_cnt_2[1]);
       break;
    case EnumCmdSetParam:    
       addJsonArr16_2("CLB_P_LH", pow_low, pow_high);   
@@ -693,6 +709,7 @@ void baseInterrupt(uint8_t i) {
   v_es[i]=v;  
   if(v_enc_cnt[i]==255) F_SETOVERFLOW();
   else v_enc_cnt[i]++; 
+  v_enc_cnt_2[i]++; // test
 } 
 
 
