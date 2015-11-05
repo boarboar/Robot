@@ -55,6 +55,7 @@ struct TaskStruct {
   int16_t adv_a;  // in nrads
   //int16_t bearing;
   int16_t bearing_abs;
+  int8_t power;
 } task;
 
 // cmd
@@ -275,13 +276,14 @@ void StartTask()
   task.angle=task.dist=task.adv_d=task.adv_a=0;
   
   if(F_ISTASKMOV()) { 
-    cmd_power[0]=cmd_power[1]=(pow_low+pow_high)/2;  
+    //cmd_power[0]=cmd_power[1]=(pow_low+pow_high)/2;  
+    cmd_power[0]=cmd_power[1]=map(task.power, 0, 100, pow_low, pow_high);
     drv_dir[0]=drv_dir[1]=1;
     task.x_abs=x+(int32_t)nx*(task.target)/V_NORM*10; //10th mm
     task.y_abs=y+(int32_t)ny*(task.target)/V_NORM*10; //10th mm
   } else { // rot
     rot=true;
-    cmd_power[0]=cmd_power[1]=pow_rot_low;  
+    cmd_power[0]=cmd_power[1]=pow_rot_low;
     if(task.target>0) { // clockwise
       drv_dir[0]=1; drv_dir[1]=2; 
     } else { //counterclockwise
@@ -594,6 +596,7 @@ void Notify() {
         addJson("TG", RADN_TO_GRAD(task.target));
         addJson("TABSA", RADN_TO_GRAD(angle+task.target)); // absolute
       }
+      addJson("TPOW", task.power);
       break;
     default:;
    }
@@ -666,6 +669,13 @@ int8_t Parse()
     m=cmdReader.ReadInt();
     if(!m) return EnumErrorBadParam;
     task.target=m*10; // mm
+    task.power=0;
+    if(cmdReader.Match(",")) { // optional power
+      m=cmdReader.ReadInt();
+      if(m<0) m=0;
+      if(m>100) m=100;
+      task.power=m;
+    }
     F_SETTASKMOV();
     return EnumCmdTaskMove;
   }
@@ -673,7 +683,15 @@ int8_t Parse()
     if(!cmdReader.Match("=")) return EnumErrorBadSyntax;
     m=cmdReader.ReadInt();
     if(!m) return EnumErrorBadParam;
-    task.target=GRAD_TO_RADN(m);  // rad norm  
+    task.target=GRAD_TO_RADN(m);  // rad norm
+    /*
+    if(cmdReader.Match(",")) { // optional power
+      m=cmdReader.ReadInt();
+      if(m<0) m=0;
+      if(m>100) m=100;
+      task.power=m;
+    } 
+   */ 
     F_SETTASKROT();
     return EnumCmdTaskRotate;
   }
