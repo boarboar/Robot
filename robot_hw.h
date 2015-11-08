@@ -34,7 +34,8 @@
 #define US_OUT   P1_7
 
 const unsigned int WHEEL_CHGSTATES = 40;
-const unsigned int WHEEL_RAD_MM_10 = 380; // measured 320
-const unsigned int WHEEL_BASE_MM_10 = 1400;// approx... carriage base 145 - too high, 135 - too low
+const unsigned int WHEEL_RAD_MM_10 = 330; // measured 320
+//const unsigned int WHEEL_BASE_MM_10 = 1400;// approx... carriage base 145 - too high, 135 - too low
+const unsigned int WHEEL_BASE_MM_10 = 1300;// approx... carriage base 145 - too high, 135 - too low
 
 
