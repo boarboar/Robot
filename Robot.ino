@@ -39,7 +39,7 @@ uint8_t M_PID_KP = M_PID_KP_0;
 uint8_t M_PID_KD = M_PID_KD_0;
 uint8_t M_PID_KI = M_PID_KI_0;
 
-const int8_t M_PID_TERR_LIM=4; // 2
+const int8_t M_PID_TERR_LIM=100; // prev was 4. 
 
 #define SENS_K_K  5
 #define SENS_K_DIV 10
@@ -73,7 +73,7 @@ uint8_t pow_low=0, pow_high=0, pow_rot_low=0;
 uint8_t coast_low=0, coast_high=0, coast_rot_low=0; // in cm / deg
 
 // current state 
-uint8_t flags=0; 
+uint16_t flags=0; 
 int32_t dist=0;  // in 10thmm
 int16_t diff=0;  // in 10tmm
 
@@ -109,9 +109,9 @@ CommandReader cmdReader;
 // volatile encoder section
 volatile uint8_t v_enc_cnt[2]={0,0}; 
 volatile uint8_t v_es[2]={0,0};
-volatile uint16_t v_enc_cnt_2[2]={0,0}; // test
+//volatile uint16_t v_enc_cnt_2[2]={0,0}; // test
 
-uint16_t enc_cnt_2[2]={0,0}; // test
+//uint16_t enc_cnt_2[2]={0,0}; // test
 
 void setup()
 { 
@@ -197,7 +197,7 @@ void loop()
       InitPos();
     } 
     else if(cmdResult==EnumCmdTest) { ; }
-    else if(cmdResult==EnumCmdTaskMove || cmdResult==EnumCmdTaskRotate) {
+    else if(cmdResult==EnumCmdTaskMove || cmdResult==EnumCmdTaskRotate  || cmdResult==EnumCmdTaskAbs) {
         lastCommandTime = millis();        
         StartTask();
     }
@@ -211,8 +211,8 @@ void InitPos() {
   nx=0; ny=V_NORM;
   dist=diff=0;
   angle=0;
-  v_enc_cnt_2[0]=v_enc_cnt_2[1]=0;
-  enc_cnt_2[0]=enc_cnt_2[1]=0;
+//  v_enc_cnt_2[0]=v_enc_cnt_2[1]=0;
+//  enc_cnt_2[0]=enc_cnt_2[1]=0;
 }      
       
 void StartDrive(boolean rot) 
@@ -281,7 +281,7 @@ void StartTask()
     drv_dir[0]=drv_dir[1]=1;
     task.x_abs=x+(int32_t)nx*(task.target)/V_NORM*10; //10th mm
     task.y_abs=y+(int32_t)ny*(task.target)/V_NORM*10; //10th mm
-  } else { // rot
+  } else if(F_ISTASKROT()) { // rot
     rot=true;
     cmd_power[0]=cmd_power[1]=pow_rot_low;
     if(task.target>0) { // clockwise
@@ -289,7 +289,12 @@ void StartTask()
     } else { //counterclockwise
       drv_dir[0]=2; drv_dir[1]=1; 
     }
+  } else if(F_ISTASKABS()) { // abs
+    task.dist = 1000; // test
+    cmd_power[0]=cmd_power[1]=map(task.power, 0, 100, pow_low, pow_high);
+    drv_dir[0]=drv_dir[1]=1;
   }
+ 
   StartDrive(rot);
 }
 
@@ -303,7 +308,7 @@ void StopTask()
 boolean TrackTask() 
 { 
   bool res=false;
-  if(F_ISTASKMOV()) {
+  if(F_ISTASKMOV() || F_ISTASKABS()) {
     if((task.dist+2*task.adv_d)/10>=task.target) pid_to = PID_TIMEOUT_LOW;
     res = (task.dist+task.adv_d)/10>=task.target; //mm
   }
@@ -334,7 +339,7 @@ void ReadEnc()
     if(drv_dir[i]==2) s[i]=-enc_cnt[i];
     else s[i]=enc_cnt[i];
     
-    enc_cnt_2[i]+=enc_cnt[i];
+//    enc_cnt_2[i]+=enc_cnt[i];
     
   }
 
@@ -557,8 +562,8 @@ void Notify() {
       delay(10);
       addJson("L", last_dur);       
       addJsonBin("FLG", flags); 
-      addJsonArr16_2("ECC2", enc_cnt_2[0], enc_cnt_2[1]);
-      addJsonArr16_2("ECCV2", v_enc_cnt_2[0], v_enc_cnt_2[1]);
+//      addJsonArr16_2("ECC2", enc_cnt_2[0], enc_cnt_2[1]);
+//      addJsonArr16_2("ECCV2", v_enc_cnt_2[0], v_enc_cnt_2[1]);
       break;
    case EnumCmdSetParam:    
       addJsonArr16_2("CLB_P_LH", pow_low, pow_high);   
@@ -587,9 +592,10 @@ void Notify() {
     }
     case EnumCmdTaskMove:       
     case EnumCmdTaskRotate:           
+    case EnumCmdTaskAbs:               
       addJson("FT", flags&R_F_ISTASK);
-      addJson("FM", flags&R_F_ISTASKMOV);
-      if(F_ISTASKMOV()) {
+      addJsonBin("FY", flags&(R_F_ISTASKMOV|R_F_ISTASKROT|R_F_ISTASKABS));
+      if(F_ISTASKMOV() || F_ISTASKABS()) {
         addJson("TG", task.target/10);
         addJsonArr16_2("TABSX", task.x_abs/100, task.y_abs/100); // absolute, in cm        
       } else {
@@ -695,6 +701,14 @@ int8_t Parse()
     F_SETTASKROT();
     return EnumCmdTaskRotate;
   }
+  else if(cmdReader.Match("TA")) {        
+    if(!cmdReader.Match("=")) return EnumErrorBadSyntax;
+    task.x_abs=(int32_t)cmdReader.ReadInt()*100; // in 10th mm
+    if(!cmdReader.Match(",")) return EnumErrorBadSyntax;
+    task.y_abs=(int32_t)cmdReader.ReadInt()*100; // in 10th mm
+    F_SETTASKABS();
+    return EnumCmdTaskAbs;
+  }  
   else if(cmdReader.Match("P")) {        
     // P:D=100
     if(!cmdReader.Match(":")) return EnumCmdSetParam; // output
@@ -727,7 +741,7 @@ void baseInterrupt(uint8_t i) {
   v_es[i]=v;  
   if(v_enc_cnt[i]==255) F_SETOVERFLOW();
   else v_enc_cnt[i]++; 
-  v_enc_cnt_2[i]++; // test
+//  v_enc_cnt_2[i]++; // test
 } 
 
 
