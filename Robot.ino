@@ -290,7 +290,7 @@ void StartTask()
       drv_dir[0]=2; drv_dir[1]=1; 
     }
   } else if(F_ISTASKABS()) { // abs
-    task.dist = 1000; // test
+    //task.dist = 1000; // test
     cmd_power[0]=cmd_power[1]=map(task.power, 0, 100, pow_low, pow_high);
     drv_dir[0]=drv_dir[1]=1;
   }
@@ -308,11 +308,11 @@ void StopTask()
 boolean TrackTask() 
 { 
   bool res=false;
-  if(F_ISTASKMOV() || F_ISTASKABS()) {
+  if(F_ISTASKMOV()) {
     if((task.dist+2*task.adv_d)/10>=task.target) pid_to = PID_TIMEOUT_LOW;
     res = (task.dist+task.adv_d)/10>=task.target; //mm
   }
-  else {
+  else if(F_ISTASKROT()) {
     if(task.target>0) { //clockwise
       if((task.angle+2*task.adv_a)>=task.target) pid_to = PID_TIMEOUT_LOW;
       res = task.angle+task.adv_a>=task.target;
@@ -321,6 +321,10 @@ boolean TrackTask()
       if((task.angle+2*task.adv_a)<=task.target) pid_to = PID_TIMEOUT_LOW;
       res = task.angle+task.adv_a<=task.target;
     }
+  } else if(F_ISTASKABS()) {
+    uint32_t d2=(uint32_t)((task.x_abs-x)/100)*((task.x_abs-x)/100)+(uint32_t)((task.y_abs-y)/100)*((task.y_abs-y)/100); // in cm2
+    if(d2<2500) pid_to = PID_TIMEOUT_LOW; // rad<50cm
+    res=d2<400;  // rad<20cm
   }
   if(res) F_SETTFIN();
   return res;
@@ -706,6 +710,7 @@ int8_t Parse()
     task.x_abs=(int32_t)cmdReader.ReadInt()*100; // in 10th mm
     if(!cmdReader.Match(",")) return EnumErrorBadSyntax;
     task.y_abs=(int32_t)cmdReader.ReadInt()*100; // in 10th mm
+    task.power=0;
     F_SETTASKABS();
     return EnumCmdTaskAbs;
   }  
