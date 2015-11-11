@@ -394,7 +394,7 @@ void PID(uint16_t ctime)
     uint8_t i;
     t_err[0]=t_err[1]=0;   
     if(F_ISTASKANY()) {      
-      if(F_ISTASKMOV()) {
+      if(F_ISTASKMOV() || F_ISTASKABS()) {
         int8_t task_err=RADN_TO_GRAD(task.bearing_abs)/10;
         if(task_err>M_PID_TERR_LIM) task_err=M_PID_TERR_LIM;
         if(task_err<-M_PID_TERR_LIM) task_err=-M_PID_TERR_LIM;
@@ -409,7 +409,6 @@ void PID(uint16_t ctime)
       //enc_rate[i]=(uint8_t)( ((uint16_t)rate*M_K_K+(uint16_t)enc_rate[i]*(M_K_D-M_K_K))/M_K_D ); // Kalman
       if(pid_cnt>=M_WUP_PID_CNT) { // do not correct for the first cycles - ca 100-200ms(warmup)
         p_err = (trg_rate[i]-enc_rate[i])+t_err[i];
-        //p_err = trg_rate[i]-enc_rate[i];
         d_err[i] = p_err-prev_err[i];
         int_err[i]=int_err[i]+p_err;
         int16_t pow=cur_power[i]+((int16_t)p_err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI+(int16_t)d_err[i]*M_PID_KD)/M_PID_DIV;
