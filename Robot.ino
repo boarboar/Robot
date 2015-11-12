@@ -84,24 +84,26 @@ int32_t angle=0;
 uint16_t us_dist=9999; 
 
 // PID section
+uint16_t pid_cnt=0;
+int16_t int_err[2]={0,0};
+
 uint8_t pid_to=0;
-uint8_t pid_cnt=0;
 uint8_t cur_power[2]={0,0}; 
 uint8_t trg_rate[2]={0,0}; 
 uint8_t enc_cnt[2]={0,0}; 
 uint8_t enc_rate[2]={0,0}; 
 int8_t  prev_err[2]={0,0};
-int16_t int_err[2]={0,0};
 int8_t d_err[2]={0,0};
 int8_t t_err[2]={0,0};
 
 //uint8_t enc_rate_opt[2]={0,0};  // Kalman
 
-#define WALL_LOG_SZ 4
+#define WALL_LOG_SZ 8
 struct __attribute__((__packed__)) WallRec {
   int8_t adv; //cm
   int8_t usd; //cm
   int8_t usd_k; //cm - kalman opt
+  int8_t adv_k; //cm - kalman opt
 } logw[WALL_LOG_SZ]; // candidate for calman filter
 
 CommandReader cmdReader;
@@ -323,8 +325,8 @@ boolean TrackTask()
     }
   } else if(F_ISTASKABS()) {
     uint32_t d2=(uint32_t)((task.x_abs-x)/100)*((task.x_abs-x)/100)+(uint32_t)((task.y_abs-y)/100)*((task.y_abs-y)/100); // in cm2
-    if(d2<2500) pid_to = PID_TIMEOUT_LOW; // rad<50cm
-    res=d2<400;  // rad<20cm
+    if(d2<1600) pid_to = PID_TIMEOUT_LOW; // rad<40cm
+    res=d2<100;  // rad<10cm
   }
   if(res) F_SETTFIN();
   return res;
@@ -586,8 +588,9 @@ void Notify() {
       for(uint8_t i=WALL_LOG_SZ; i>0; i--) { 
         //PrintLogPair(logw[i-1].adv, logw[i-1].usd); 
         Serial.print(":");
-        PrintLog(logw[i-1].adv);
-        PrintLogPair(logw[i-1].usd, logw[i-1].usd_k); 
+        //PrintLog(logw[i-1].adv);
+        PrintLogPair(logw[i-1].adv, logw[i-1].usd); 
+        PrintLogPair(logw[i-1].adv_k, logw[i-1].usd_k); 
         delay(10);
       }
       Serial.print("\",");
@@ -640,7 +643,15 @@ void readUSDist() {
       for(uint8_t i=WALL_LOG_SZ-1; i>=1; i--) logw[i]=logw[i-1];
       logw[0].adv=task.adv_d/100; //cm
       logw[0].usd=usd_prev-us_dist;
-      logw[0].usd_k=(uint8_t)( ((uint16_t)logw[0].usd*SENS_K_K+(uint16_t)logw[0].adv*(SENS_K_DIV-SENS_K_K))/SENS_K_DIV ); // Kalman
+      //logw[0].usd_k=(uint8_t)( ((uint16_t)logw[0].usd*SENS_K_K+(uint16_t)logw[0].adv*(SENS_K_DIV-SENS_K_K))/SENS_K_DIV ); // Kalman
+      if(pid_cnt>1) {
+        logw[0].usd_k=(uint8_t)( ((uint16_t)logw[0].usd*SENS_K_K+(uint16_t)logw[1].usd_k*(SENS_K_DIV-SENS_K_K))/SENS_K_DIV ); // Kalman
+        logw[0].adv_k=(uint8_t)( ((uint16_t)logw[0].adv*SENS_K_K+(uint16_t)logw[1].adv_k*(SENS_K_DIV-SENS_K_K))/SENS_K_DIV ); // Kalman
+      }
+      else {
+        logw[0].usd_k=logw[0].usd;
+        logw[0].adv_k=logw[0].adv;
+      }
   }
 }
 //=======================================
