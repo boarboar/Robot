@@ -28,10 +28,10 @@ border: 1px red dotted;
 }
 
 .padded {
-	left: 10px;
-	right: 10px;
-	top: 10px;
-	bottom: 10px;
+	left: 5px;
+	right: 5px;
+	top: 5px;
+	bottom: 5px;
 }
 
 .padded_0 {
@@ -55,7 +55,7 @@ border: 1px red dotted;
 	top: 	0px;
 	bottom: 0px;
 	margin: 0;
-	background: url(screw.png) left top no-repeat, url(screw.png) left bottom no-repeat, url(screw.png) right top no-repeat, url(screw.png) right bottom no-repeat;
+	background: url(screw_s.png) left top no-repeat, url(screw_s.png) left bottom no-repeat, url(screw_s.png) right top no-repeat, url(screw_s.png) right bottom no-repeat;
 }
 
 .bplace {
