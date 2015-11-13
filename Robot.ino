@@ -149,7 +149,7 @@ void setup()
   pow_rot_low=M_POW_LOWEST_LIM;
   Calibrate(RATE_SAMPLE_TARGET_ROT_LOW, &pow_rot_low, &enc_rot_rate_low, &coast_rot_low, true);
   
-  for(i=0; i<WALL_LOG_SZ; i++) logw[i].adv=logw[i].usd=0;
+  for(i=0; i<WALL_LOG_SZ; i++) {logw[i].adv=logw[i].usd=logw[i].adv_k=logw[i].usd_k=-127;}
   
   cmdReader.Init();
   
@@ -585,14 +585,20 @@ void Notify() {
       break;      
     case EnumCmdWallLog: {
       Serial.print("\"LOGW\":\""); 
+      /*
       for(uint8_t i=WALL_LOG_SZ; i>0; i--) { 
-        //PrintLogPair(logw[i-1].adv, logw[i-1].usd); 
         Serial.print(":");
-        //PrintLog(logw[i-1].adv);
         PrintLogPair(logw[i-1].adv, logw[i-1].usd); 
         PrintLogPair(logw[i-1].adv_k, logw[i-1].usd_k); 
         delay(10);
-      }
+      } 
+      */
+      for(uint8_t i=0; i<WALL_LOG_SZ; i++) { 
+        Serial.print(":");
+        PrintLogPair(logw[i].adv, logw[i].usd); 
+        PrintLogPair(logw[i].adv_k, logw[i].usd_k); 
+        delay(10);
+      }       
       Serial.print("\",");
       break;
     }
@@ -644,7 +650,7 @@ void readUSDist() {
       logw[0].adv=task.adv_d/100; //cm
       logw[0].usd=usd_prev-us_dist;
       //logw[0].usd_k=(uint8_t)( ((uint16_t)logw[0].usd*SENS_K_K+(uint16_t)logw[0].adv*(SENS_K_DIV-SENS_K_K))/SENS_K_DIV ); // Kalman
-      if(pid_cnt>1) {
+      if(logw[1].adv_k==-127) {
         logw[0].usd_k=(uint8_t)( ((uint16_t)logw[0].usd*SENS_K_K+(uint16_t)logw[1].usd_k*(SENS_K_DIV-SENS_K_K))/SENS_K_DIV ); // Kalman
         logw[0].adv_k=(uint8_t)( ((uint16_t)logw[0].adv*SENS_K_K+(uint16_t)logw[1].adv_k*(SENS_K_DIV-SENS_K_K))/SENS_K_DIV ); // Kalman
       }
@@ -652,6 +658,7 @@ void readUSDist() {
         logw[0].usd_k=logw[0].usd;
         logw[0].adv_k=logw[0].adv;
       }
+      
   }
 }
 //=======================================
