@@ -104,6 +104,7 @@ struct __attribute__((__packed__)) WallRec {
   int8_t usd; //cm
   int8_t usd_k; //cm - kalman opt
   int8_t adv_k; //cm - kalman opt
+  int8_t docheck;
 } logw[WALL_LOG_SZ]; // candidate for calman filter
 
 CommandReader cmdReader;
@@ -597,6 +598,7 @@ void Notify() {
         Serial.print(":");
         PrintLogPair(logw[i].adv, logw[i].usd); 
         PrintLogPair(logw[i].adv_k, logw[i].usd_k); 
+        PrintLog(logw[i].docheck);
         delay(10);
       }       
       Serial.print("\",");
@@ -651,13 +653,14 @@ void readUSDist() {
       logw[0].usd=usd_prev-us_dist;
       //logw[0].usd_k=(uint8_t)( ((uint16_t)logw[0].usd*SENS_K_K+(uint16_t)logw[0].adv*(SENS_K_DIV-SENS_K_K))/SENS_K_DIV ); // Kalman
       if(logw[1].adv_k==-127) {
+        logw[0].usd_k=logw[0].usd;
+        logw[0].adv_k=logw[0].adv;         
+      }
+      else {
         logw[0].usd_k=(uint8_t)( ((uint16_t)logw[0].usd*SENS_K_K+(uint16_t)logw[1].usd_k*(SENS_K_DIV-SENS_K_K))/SENS_K_DIV ); // Kalman
         logw[0].adv_k=(uint8_t)( ((uint16_t)logw[0].adv*SENS_K_K+(uint16_t)logw[1].adv_k*(SENS_K_DIV-SENS_K_K))/SENS_K_DIV ); // Kalman
       }
-      else {
-        logw[0].usd_k=logw[0].usd;
-        logw[0].adv_k=logw[0].adv;
-      }
+      logw[0].docheck=drv_dir[0]+drv_dir[1]==2 ? 1 : 0;
       
   }
 }
