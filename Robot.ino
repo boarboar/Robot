@@ -17,10 +17,12 @@ const unsigned int RATE_SAMPLE_TARGET_HIGH = 18;
 const unsigned int WHEEL_RATIO_RPM = (60000/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
 const unsigned int WHEEL_RATIO_SMPS_10 = (WHEEL_RAD_MM_10/10*628/RATE_SAMPLE_PERIOD/WHEEL_CHGSTATES);
 const unsigned int US_WALL_DIST=20;
-const unsigned int US_WALL_CNT_THR=100;
+//const unsigned int US_WALL_CNT_THR=100;
 const unsigned int M_COAST_TIME=400;
 const unsigned int M_WUP_PID_CNT=3;
 const unsigned int TASK_TIMEOUT = 20000; 
+const int US_STALL_ADV_LIM = 4;
+const int US_STALL_USD_LIM = 2;
 
 #define CHGST_TO_MM_10(CNT)  ((int32_t)(CNT)*V_NORM_PI2*WHEEL_RAD_MM_10/WHEEL_CHGSTATES/10000)
 
@@ -485,14 +487,14 @@ void PrintLogToSerial(uint16_t ctime) {
   PrintLogPair(enc_cnt[0], enc_cnt[1]); 
   PrintLogPair(trg_rate[0], trg_rate[1]);
   PrintLogPair(enc_rate[0], enc_rate[1]);
-  Serial.print(":");
+  Serial.print(":P:");
   PrintLogPair(trg_rate[0]-enc_rate[0], trg_rate[1]-enc_rate[1]);
   PrintLogPair(t_err[0], t_err[1]);
   PrintLogPair(d_err[0], d_err[1]);
   PrintLogPair(int_err[0], int_err[1]);
   PrintLogPair(cur_power[0], cur_power[1]);
-  Serial.print(":");
-  //PrintLogPair(task.x/100, task.y/100); //in cm
+  delay(10);
+  Serial.print(":T:");
   PrintLogPair((task.x_abs-x)/100, (task.y_abs-y)/100); //in cm
   PrintLogPair(task.dist/100, task.adv_d/100); //in cm
   PrintLogPair(RADN_TO_GRAD(task.angle), RADN_TO_GRAD(task.adv_a));
@@ -505,6 +507,9 @@ void PrintLogToSerial(uint16_t ctime) {
   PrintLogPair(tx, ty); 
   PrintLogPair(RADN_TO_GRAD(task.bearing), RADN_TO_GRAD(task.bearing_abs));
   */
+  Serial.print(":S:");
+  PrintLogPair(logw[0].adv_k, logw[0].usd_k); 
+  PrintLog(logw[0].stall);
   Serial.println(); 
 }
 
@@ -586,17 +591,8 @@ void Notify() {
       break;      
     case EnumCmdWallLog: {
       Serial.print("\"LOGW\":\""); 
-      /*
-      for(uint8_t i=WALL_LOG_SZ; i>0; i--) { 
-        Serial.print(":");
-        PrintLogPair(logw[i-1].adv, logw[i-1].usd); 
-        PrintLogPair(logw[i-1].adv_k, logw[i-1].usd_k); 
-        delay(10);
-      } 
-      */
       for(uint8_t i=0; i<WALL_LOG_SZ; i++) { 
         Serial.print(":");
-        //PrintLogPair(logw[i].adv, logw[i].usd); 
         PrintLogPair(logw[i].adv_k, logw[i].usd_k); 
         PrintLog(logw[i].stall);
         delay(10);
@@ -652,20 +648,7 @@ void readUSDist() {
       adv=task.adv_d/100; //cm
       usd=usd_prev-us_dist;      
       for(uint8_t i=WALL_LOG_SZ-1; i>=1; i--) logw[i]=logw[i-1];
-      //logw[0].adv=task.adv_d/100; //cm
-      //logw[0].usd=usd_prev-us_dist;
-      //logw[0].usd_k=(uint8_t)( ((uint16_t)logw[0].usd*SENS_K_K+(uint16_t)logw[0].adv*(SENS_K_DIV-SENS_K_K))/SENS_K_DIV ); // Kalman
-      /*
-      if(logw[1].adv_k==-127) {
-        logw[0].usd_k=usd;
-        logw[0].adv_k=adv;         
-      }
-      else {
-        logw[0].usd_k=(uint8_t)( ((uint16_t)usd*SENS_K_K+(uint16_t)logw[1].usd_k*(SENS_K_DIV-SENS_K_K))/SENS_K_DIV ); // Kalman
-        logw[0].adv_k=(uint8_t)( ((uint16_t)adv*SENS_K_K+(uint16_t)logw[1].adv_k*(SENS_K_DIV-SENS_K_K))/SENS_K_DIV ); // Kalman
-      }
-      */
-      
+
       if(logw[1].adv_k!=-127) {
         usd=(uint8_t)( ((uint16_t)usd*SENS_K_K+(uint16_t)logw[1].usd_k*(SENS_K_DIV-SENS_K_K))/SENS_K_DIV ); // Kalman
         adv=(uint8_t)( ((uint16_t)adv*SENS_K_K+(uint16_t)logw[1].adv_k*(SENS_K_DIV-SENS_K_K))/SENS_K_DIV ); // Kalman
@@ -673,7 +656,11 @@ void readUSDist() {
       logw[0].usd_k=usd;
       logw[0].adv_k=adv;
       
-      if(drv_dir[0]+drv_dir[1]==2 && abs(usd-adv)>10) logw[0].stall=1; // todo: add a check tjat the pows[] are comparable
+      // CRITERIA
+      // Robot moves fwd means both dir fwd && pows comparable (?)
+      // adv > limit1 && usd < limi2 for N last cycles
+      
+      if(drv_dir[0]+drv_dir[1]==2 && adv>=US_STALL_ADV_LIM && usd<=US_STALL_ADV_LIM) logw[0].stall=1; // todo: add a check tjat the pows[] are comparable
       else logw[0].stall=0;
       
   }
