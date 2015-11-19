@@ -100,13 +100,11 @@ int8_t t_err[2]={0,0};
 
 //uint8_t enc_rate_opt[2]={0,0};  // Kalman
 
-#define WALL_LOG_SZ 8
+#define WALL_LOG_SZ 4
 struct __attribute__((__packed__)) WallRec {
-  //int8_t adv; //cm
-  //int8_t usd; //cm
   int8_t usd_k; //cm - kalman opt
   int8_t adv_k; //cm - kalman opt
-  int8_t stall;
+//  int8_t stall;
 } logw[WALL_LOG_SZ]; // candidate for calman filter
 
 CommandReader cmdReader;
@@ -487,14 +485,14 @@ void PrintLogToSerial(uint16_t ctime) {
   PrintLogPair(enc_cnt[0], enc_cnt[1]); 
   PrintLogPair(trg_rate[0], trg_rate[1]);
   PrintLogPair(enc_rate[0], enc_rate[1]);
-  Serial.print(":P:");
+  Serial.print("P:");
   PrintLogPair(trg_rate[0]-enc_rate[0], trg_rate[1]-enc_rate[1]);
   PrintLogPair(t_err[0], t_err[1]);
   PrintLogPair(d_err[0], d_err[1]);
   PrintLogPair(int_err[0], int_err[1]);
   PrintLogPair(cur_power[0], cur_power[1]);
   delay(10);
-  Serial.print(":T:");
+  Serial.print("T:");
   PrintLogPair((task.x_abs-x)/100, (task.y_abs-y)/100); //in cm
   PrintLogPair(task.dist/100, task.adv_d/100); //in cm
   PrintLogPair(RADN_TO_GRAD(task.angle), RADN_TO_GRAD(task.adv_a));
@@ -507,9 +505,14 @@ void PrintLogToSerial(uint16_t ctime) {
   PrintLogPair(tx, ty); 
   PrintLogPair(RADN_TO_GRAD(task.bearing), RADN_TO_GRAD(task.bearing_abs));
   */
-  Serial.print(":S:");
+  Serial.print("S:");
   PrintLogPair(logw[0].adv_k, logw[0].usd_k); 
-  PrintLog(logw[0].stall);
+  uint16_t diff=0;
+  uint8_t i;
+  for(i=0; i<WALL_LOG_SZ; i++) diff+=abs(logw[i].adv_k-logw[i].usd_k);
+  diff/=WALL_LOG_SZ;  
+  PrintLog(diff);
+  //PrintLog(logw[0].stall);
   Serial.println(); 
 }
 
@@ -594,7 +597,7 @@ void Notify() {
       for(uint8_t i=0; i<WALL_LOG_SZ; i++) { 
         Serial.print(":");
         PrintLogPair(logw[i].adv_k, logw[i].usd_k); 
-        PrintLog(logw[i].stall);
+        //PrintLog(logw[i].stall);
         delay(10);
       }       
       Serial.print("\",");
@@ -660,8 +663,8 @@ void readUSDist() {
       // Robot moves fwd means both dir fwd && pows comparable (?)
       // adv > limit1 && usd < limi2 for N last cycles
       
-      if(drv_dir[0]+drv_dir[1]==2 && adv>=US_STALL_ADV_LIM && usd<=US_STALL_ADV_LIM) logw[0].stall=1; // todo: add a check tjat the pows[] are comparable
-      else logw[0].stall=0;
+      //if(drv_dir[0]+drv_dir[1]==2 && adv>=US_STALL_ADV_LIM && usd<=US_STALL_ADV_LIM) logw[0].stall=1; // todo: add a check tjat the pows[] are comparable
+      //else logw[0].stall=0;
       
   }
 }
