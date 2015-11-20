@@ -83,7 +83,9 @@ int32_t x=0, y=0;// in 10thmm
 int16_t nx=0, ny=V_NORM;
 int32_t angle=0; 
 
-uint16_t us_dist=9999; 
+uint16_t us_dist=0xFFF; 
+uint16_t stall_u=0; 
+
 
 // PID section
 uint16_t pid_cnt=0;
@@ -98,13 +100,10 @@ int8_t  prev_err[2]={0,0};
 int8_t d_err[2]={0,0};
 int8_t t_err[2]={0,0};
 
-//uint8_t enc_rate_opt[2]={0,0};  // Kalman
-
 #define WALL_LOG_SZ 4
 struct __attribute__((__packed__)) WallRec {
   int8_t usd_k; //cm - kalman opt
   int8_t adv_k; //cm - kalman opt
-//  int8_t stall;
 } logw[WALL_LOG_SZ]; // candidate for calman filter
 
 CommandReader cmdReader;
@@ -112,9 +111,6 @@ CommandReader cmdReader;
 // volatile encoder section
 volatile uint8_t v_enc_cnt[2]={0,0}; 
 volatile uint8_t v_es[2]={0,0};
-//volatile uint16_t v_enc_cnt_2[2]={0,0}; // test
-
-//uint16_t enc_cnt_2[2]={0,0}; // test
 
 void setup()
 { 
@@ -345,9 +341,6 @@ void ReadEnc()
     v_enc_cnt[i] = 0;
     if(drv_dir[i]==2) s[i]=-enc_cnt[i];
     else s[i]=enc_cnt[i];
-    
-//    enc_cnt_2[i]+=enc_cnt[i];
-    
   }
 
   // tracking 
@@ -507,12 +500,7 @@ void PrintLogToSerial(uint16_t ctime) {
   */
   Serial.print("S:");
   PrintLogPair(logw[0].adv_k, logw[0].usd_k); 
-  uint16_t diff=0;
-  uint8_t i;
-  for(i=0; i<WALL_LOG_SZ; i++) diff+=abs(logw[i].adv_k-logw[i].usd_k);
-  diff/=WALL_LOG_SZ;  
-  PrintLog(diff);
-  //PrintLog(logw[0].stall);
+  PrintLog(stall_u);
   Serial.println(); 
 }
 
@@ -647,9 +635,13 @@ void readUSDist() {
   //us_meas_dur = millis()-ms;
   us_dist=(int16_t)(d/58);  
   if(F_ISDRIVE()) {
-      int8_t adv, usd;
+      int8_t adv=0, usd=0;
       adv=task.adv_d/100; //cm
-      usd=usd_prev-us_dist;      
+      if(usd_prev!=0xFFF)
+        usd=usd_prev-us_dist;              
+      else 
+        usd=0;  
+
       for(uint8_t i=WALL_LOG_SZ-1; i>=1; i--) logw[i]=logw[i-1];
 
       if(logw[1].adv_k!=-127) {
@@ -657,15 +649,18 @@ void readUSDist() {
         adv=(uint8_t)( ((uint16_t)adv*SENS_K_K+(uint16_t)logw[1].adv_k*(SENS_K_DIV-SENS_K_K))/SENS_K_DIV ); // Kalman
       }
       logw[0].usd_k=usd;
-      logw[0].adv_k=adv;
-      
+      logw[0].adv_k=adv;      
       // CRITERIA
       // Robot moves fwd means both dir fwd && pows comparable (?)
       // adv > limit1 && usd < limi2 for N last cycles
       
       //if(drv_dir[0]+drv_dir[1]==2 && adv>=US_STALL_ADV_LIM && usd<=US_STALL_ADV_LIM) logw[0].stall=1; // todo: add a check tjat the pows[] are comparable
-      //else logw[0].stall=0;
+      //else logw[0].stall=0;      
       
+      uint8_t i;
+      for(i=0; i<WALL_LOG_SZ; i++) if(logw[i].adv_k!=-127) stall_u+=abs(logw[i].adv_k-logw[i].usd_k);
+      stall_u/=WALL_LOG_SZ;  
+
   }
 }
 //=======================================
@@ -770,7 +765,6 @@ void baseInterrupt(uint8_t i) {
   v_es[i]=v;  
   if(v_enc_cnt[i]==255) F_SETOVERFLOW();
   else v_enc_cnt[i]++; 
-//  v_enc_cnt_2[i]++; // test
 } 
 
 
