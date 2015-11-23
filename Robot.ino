@@ -100,6 +100,8 @@ int8_t  prev_err[2]={0,0};
 int8_t d_err[2]={0,0};
 int8_t t_err[2]={0,0};
 
+int16_t int_err_w[2]={0,0};
+
 #define WALL_LOG_SZ 4
 struct __attribute__((__packed__)) WallRec {
   int8_t usd_k; //cm - kalman opt
@@ -158,7 +160,7 @@ void setup()
 void loop()
 {  
   uint32_t cycleTime = millis();
-  if (F_ISDRIVE() && (us_dist<US_WALL_DIST && drv_dir[0]+drv_dir[1]==2)) {
+  if (F_ISDRIVE() && WallOrStall(1) /*(us_dist<US_WALL_DIST && drv_dir[0]+drv_dir[1]==2)*/) {
     F_SETWALL();
     if(F_ISTASKANY()) StopTask();
     else StopDrive(); 
@@ -185,7 +187,8 @@ void loop()
       F_CLEARTASK();
       lastCommandTime = millis();        
       last_dur=0;
-      if(!(us_dist<US_WALL_DIST && drv_dir[0]+drv_dir[1]==2)) StartDrive(false);
+      //if(!(us_dist<US_WALL_DIST && drv_dir[0]+drv_dir[1]==2)) StartDrive(false);
+      if(!WallOrStall(0)) StartDrive(false);
     } else if(cmdResult==EnumCmdContinueDrive && F_ISDRIVE()) {
       last_dur=millis()-lastCommandTime;
       lastCommandTime = millis();
@@ -210,8 +213,6 @@ void InitPos() {
   nx=0; ny=V_NORM;
   dist=diff=0;
   angle=0;
-//  v_enc_cnt_2[0]=v_enc_cnt_2[1]=0;
-//  enc_cnt_2[0]=enc_cnt_2[1]=0;
 }      
       
 void StartDrive(boolean rot) 
@@ -240,8 +241,8 @@ void StartDrive(boolean rot)
        cur_power[i]=0;
      }    
     prev_err[i]=0;
-    int_err[i]=0; 
-    //enc_rate_opt[i]=0;
+    int_err[i]=0;   
+    int_err_w[i]=0;
     enc_rate[i]=0;
   }
   ReadEnc();
@@ -407,6 +408,7 @@ void PID(uint16_t ctime)
         p_err = (trg_rate[i]-enc_rate[i])+t_err[i];
         d_err[i] = p_err-prev_err[i];
         int_err[i]=int_err[i]+p_err;
+        int_err_w[i]=int_err_w[i]+(trg_rate[i]-enc_rate[i]);
         int16_t pow=cur_power[i]+((int16_t)p_err*M_PID_KP+(int16_t)int_err[i]*M_PID_KI+(int16_t)d_err[i]*M_PID_KD)/M_PID_DIV;
         if(pow<0) pow=0;
         if(pow>M_POW_MAX) pow=M_POW_MAX;
@@ -501,6 +503,7 @@ void PrintLogToSerial(uint16_t ctime) {
   Serial.print("S:");
   PrintLogPair(logw[0].adv_k, logw[0].usd_k); 
   PrintLog(stall_u);
+  PrintLogPair(int_err_w[0], int_err_w[1]);
   Serial.println(); 
 }
 
@@ -663,6 +666,11 @@ void readUSDist() {
 
   }
 }
+
+uint8_t WallOrStall(uint8_t chack_stall) {
+  return (us_dist<US_WALL_DIST && drv_dir[0]+drv_dir[1]==2);
+}
+
 //=======================================
 
 int8_t Parse()
