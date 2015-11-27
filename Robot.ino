@@ -23,7 +23,7 @@ const unsigned int M_WUP_PID_CNT=3;
 const unsigned int TASK_TIMEOUT = 20000; 
 //const int US_STALL_ADV_LIM = 4;
 //const int US_STALL_USD_LIM = 2;
-const int US_STALL_IERR_LIM = 30;
+const int US_STALL_IERR_LIM = 25;
 
 #define CHGST_TO_MM_10(CNT)  ((int32_t)(CNT)*V_NORM_PI2*WHEEL_RAD_MM_10/WHEEL_CHGSTATES/10000)
 
@@ -161,7 +161,7 @@ void setup()
 void loop()
 {  
   uint32_t cycleTime = millis();
-  if (F_ISDRIVE() && WallOrStall(1) /*(us_dist<US_WALL_DIST && drv_dir[0]+drv_dir[1]==2)*/) {
+  if (F_ISDRIVE() && WallOrStall(1)) {
     F_SETWALL();
     if(F_ISTASKANY()) StopTask();
     else StopDrive(); 
@@ -188,7 +188,6 @@ void loop()
       F_CLEARTASK();
       lastCommandTime = millis();        
       last_dur=0;
-      //if(!(us_dist<US_WALL_DIST && drv_dir[0]+drv_dir[1]==2)) StartDrive(false);
       if(!WallOrStall(0)) StartDrive(false);
     } else if(cmdResult==EnumCmdContinueDrive && F_ISDRIVE()) {
       last_dur=millis()-lastCommandTime;
@@ -673,7 +672,7 @@ uint8_t WallOrStall(uint8_t check_stall) {
     Serial.print("@OBST:"); PrintLog(us_dist); Serial.println();
     return 1; // obstacle
   }
-  if(check_stall && drv_dir[0]+drv_dir[1]==2 && int_err_w[0]>=US_STALL_IERR_LIM && int_err_w[1]>=US_STALL_IERR_LIM) {
+  if(check_stall==1 && drv_dir[0]+drv_dir[1]==2 && int_err_w[0]>=US_STALL_IERR_LIM && int_err_w[1]>=US_STALL_IERR_LIM) {
     Serial.print("@STLL:"); PrintLogPair(int_err_w[0], int_err_w[1]); Serial.println();
     return 2; // stall
   }
