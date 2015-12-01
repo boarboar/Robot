@@ -21,8 +21,6 @@ const unsigned int US_WALL_DIST=20;
 const unsigned int M_COAST_TIME=400;
 const unsigned int M_WUP_PID_CNT=3;
 const unsigned int TASK_TIMEOUT = 20000; 
-//const int US_STALL_ADV_LIM = 4;
-//const int US_STALL_USD_LIM = 2;
 const int US_STALL_IERR_LIM = 25;
 
 #define CHGST_TO_MM_10(CNT)  ((int32_t)(CNT)*V_NORM_PI2*WHEEL_RAD_MM_10/WHEEL_CHGSTATES/10000)
@@ -85,8 +83,7 @@ int16_t nx=0, ny=V_NORM;
 int32_t angle=0; 
 
 uint16_t us_dist=0xFFF; 
-uint16_t stall_u=0; 
-
+uint16_t us_dist_ver=0; 
 
 // PID section
 uint16_t pid_cnt=0;
@@ -502,7 +499,7 @@ void PrintLogToSerial(uint16_t ctime) {
   */
   Serial.print("S:");
   PrintLogPair(logw[0].adv_k, logw[0].usd_k); 
-  PrintLog(stall_u);
+  PrintLog(us_dist_ver);
   PrintLogPair(int_err_w[0], int_err_w[1]);
   Serial.println(); 
 }
@@ -626,22 +623,29 @@ boolean CheckCommandTimeout(uint16_t t)
 }
 
 void readUSDist() {
-  int16_t usd_prev = us_dist;
+  int16_t tmp = us_dist;
   digitalWrite(US_OUT, LOW);
   delayMicroseconds(2);
   digitalWrite(US_OUT, HIGH);
   delayMicroseconds(10);
   digitalWrite(US_OUT, LOW);
+  /*
   //uint32_t ms=millis();
   uint32_t d=pulseIn(US_IN, HIGH, 25000);
   if(!d) return;
   //us_meas_dur = millis()-ms;
   us_dist=(int16_t)(d/58);  
+  */
+  us_dist=(int16_t)(pulseIn(US_IN, HIGH, 25000)/58);  
+  if(!us_dist) {
+    us_dist = tmp;
+    return;
+  }
   if(F_ISDRIVE()) {
       int8_t adv=0, usd=0;
       adv=task.adv_d/100; //cm
-      if(usd_prev!=0xFFF)
-        usd=usd_prev-us_dist;              
+      if(tmp!=0xFFF)
+        usd=tmp-us_dist;              
       else 
         usd=0;  
 
@@ -653,17 +657,14 @@ void readUSDist() {
       }
       logw[0].usd_k=usd;
       logw[0].adv_k=adv;      
-      // CRITERIA
-      // Robot moves fwd means both dir fwd && pows comparable (?)
-      // adv > limit1 && usd < limi2 for N last cycles
-      
-      //if(drv_dir[0]+drv_dir[1]==2 && adv>=US_STALL_ADV_LIM && usd<=US_STALL_ADV_LIM) logw[0].stall=1; // todo: add a check tjat the pows[] are comparable
-      //else logw[0].stall=0;      
       
       uint8_t i;
-      for(i=0; i<WALL_LOG_SZ; i++) if(logw[i].adv_k!=-127) stall_u+=abs(logw[i].adv_k-logw[i].usd_k);
-      stall_u/=WALL_LOG_SZ;  
-
+      for(i=0; i<WALL_LOG_SZ; i++) if(logw[i].adv_k!=-127) tmp+=abs(logw[i].adv_k-logw[i].usd_k);
+      tmp/=WALL_LOG_SZ; 
+        
+      us_dist_ver = 0;
+      if(drv_dir[0]+drv_dir[1]==2 && tmp<4) us_dist_ver=us_dist; // verified dist // todo: add a check that the pows[] are comparable
+      
   }
 }
 
