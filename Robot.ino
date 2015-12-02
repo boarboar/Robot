@@ -499,7 +499,7 @@ void PrintLogToSerial(uint16_t ctime) {
   */
   Serial.print("S:");
   PrintLogPair(logw[0].adv_k, logw[0].usd_k); 
-  PrintLog(us_dist_ver);
+  PrintLogPair(us_dist, us_dist_ver);
   PrintLogPair(int_err_w[0], int_err_w[1]);
   Serial.println(); 
 }
@@ -659,6 +659,7 @@ void readUSDist() {
       logw[0].adv_k=adv;      
       
       uint8_t i;
+      tmp=0;
       for(i=0; i<WALL_LOG_SZ; i++) if(logw[i].adv_k!=-127) tmp+=abs(logw[i].adv_k-logw[i].usd_k);
       tmp/=WALL_LOG_SZ; 
         
