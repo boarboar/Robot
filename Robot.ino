@@ -100,10 +100,11 @@ int8_t t_err[2]={0,0};
 
 int16_t int_err_w[2]={0,0};
 
-#define WALL_LOG_SZ 4
+#define WALL_LOG_SZ 3
 struct __attribute__((__packed__)) WallRec {
-  int8_t usd_k; //cm - kalman opt
+  int16_t usd_k; //cm - kalman opt
   int8_t adv_k; //cm - kalman opt
+  int8_t ada_k; //grad - kalman opt
 } logw[WALL_LOG_SZ]; // candidate for calman filter
 
 CommandReader cmdReader;
@@ -146,7 +147,7 @@ void setup()
   pow_rot_low=M_POW_LOWEST_LIM;
   Calibrate(RATE_SAMPLE_TARGET_ROT_LOW, &pow_rot_low, &enc_rot_rate_low, &coast_rot_low, true);
   
-  for(i=0; i<WALL_LOG_SZ; i++) { /*logw[i].adv=logw[i].usd=*/logw[i].adv_k=logw[i].usd_k=-127;}
+  for(i=0; i<WALL_LOG_SZ; i++) { /*logw[i].adv=logw[i].usd=*/logw[i].ada_k=logw[i].adv_k=logw[i].usd_k=-127;}
   
   cmdReader.Init();
   
@@ -499,6 +500,7 @@ void PrintLogToSerial(uint16_t ctime) {
   */
   Serial.print("S:");
   PrintLogPair(logw[0].adv_k, logw[0].usd_k); 
+  PrintLog(logw[0].ada_k); 
   PrintLogPair(us_dist, us_dist_ver);
   PrintLogPair(int_err_w[0], int_err_w[1]);
   Serial.println(); 
@@ -642,8 +644,11 @@ void readUSDist() {
     return;
   }
   if(F_ISDRIVE()) {
-      int8_t adv=0, usd=0;
+      int8_t adv=0, ada=0;
+      int16_t usd=0;
       adv=task.adv_d/100; //cm
+      ada=RADN_TO_GRAD(task.adv_a); //grad
+      
       if(tmp!=0xFFF)
         usd=tmp-us_dist;              
       else 
@@ -652,11 +657,13 @@ void readUSDist() {
       for(uint8_t i=WALL_LOG_SZ-1; i>=1; i--) logw[i]=logw[i-1];
 
       if(logw[1].adv_k!=-127) {
-        usd=(uint8_t)( ((uint16_t)usd*SENS_K_K+(uint16_t)logw[1].usd_k*(SENS_K_DIV-SENS_K_K))/SENS_K_DIV ); // Kalman
-        adv=(uint8_t)( ((uint16_t)adv*SENS_K_K+(uint16_t)logw[1].adv_k*(SENS_K_DIV-SENS_K_K))/SENS_K_DIV ); // Kalman
+        usd=( ((int16_t)usd*SENS_K_K+(int16_t)logw[1].usd_k*(SENS_K_DIV-SENS_K_K))/SENS_K_DIV ); // Kalman
+        adv=(int8_t)( ((int16_t)adv*SENS_K_K+(int16_t)logw[1].adv_k*(SENS_K_DIV-SENS_K_K))/SENS_K_DIV ); // Kalman
+        ada=(int8_t)( ((int16_t)ada*SENS_K_K+(int16_t)logw[1].ada_k*(SENS_K_DIV-SENS_K_K))/SENS_K_DIV ); // Kalman
       }
       logw[0].usd_k=usd;
-      logw[0].adv_k=adv;      
+      logw[0].adv_k=(int8_t)adv;      
+      logw[0].ada_k=(int8_t)ada;
       
       uint8_t i;
       tmp=0;
@@ -664,7 +671,9 @@ void readUSDist() {
       tmp/=WALL_LOG_SZ; 
         
       us_dist_ver = 0;
-      if(drv_dir[0]+drv_dir[1]==2 && tmp<4) us_dist_ver=us_dist; // verified dist // todo: add a check that the pows[] are comparable
+      //if(drv_dir[0]+drv_dir[1]==2 && tmp<4) us_dist_ver=us_dist; // verified dist // todo: add a check that the pows[] are comparable
+      if(tmp<4) us_dist_ver=us_dist; // verified dist // todo: add a check that the pows[] are comparable
+      // should also work good for minor angles
       
   }
 }
