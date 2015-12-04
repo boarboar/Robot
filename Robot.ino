@@ -502,7 +502,13 @@ void PrintLogToSerial(uint16_t ctime) {
   PrintLogPair(logw[0].adv_k, logw[0].usd_k); 
   PrintLog(logw[0].ada_k); 
   PrintLogPair(us_dist, us_dist_ver);
-  PrintLogPair(int_err_w[0], int_err_w[1]);
+  //PrintLogPair(int_err_w[0], int_err_w[1]);
+  if(us_dist_ver != 0) {
+    int16_t xw=x/100+((int32_t)nx*us_dist_ver)/V_NORM; // in cm
+    int16_t yw=y/100+((int32_t)ny*us_dist_ver)/V_NORM; // in cm
+    PrintLogPair(xw, yw);
+  }
+  
   Serial.println(); 
 }
 
