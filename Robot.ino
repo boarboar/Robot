@@ -97,6 +97,7 @@ uint8_t enc_rate[2]={0,0};
 int8_t  prev_err[2]={0,0};
 int8_t d_err[2]={0,0};
 int8_t t_err[2]={0,0};
+uint8_t bad_us_cnt=0;
 
 int16_t int_err_w[2]={0,0};
 
@@ -502,10 +503,12 @@ void PrintLogToSerial(uint16_t ctime) {
   PrintLogPair(logw[0].adv_k, logw[0].usd_k); 
   PrintLog(logw[0].ada_k); 
   PrintLogPair(us_dist, us_dist_ver);
-  //PrintLogPair(int_err_w[0], int_err_w[1]);
+  PrintLog(bad_us_cnt); 
+  //PrintLogPair(int_err_w[0], int_err_w[1]);  
   if(us_dist_ver != 0) {
     int16_t xw=x/100+((int32_t)nx*us_dist_ver)/V_NORM; // in cm
-    int16_t yw=y/100+((int32_t)ny*us_dist_ver)/V_NORM; // in cm
+    int16_t yw=y/100+((int32_t)ny*us_dist_ver)/V_NORM; // in cm    
+    Serial.print("W:");
     PrintLogPair(xw, yw);
   }
   
@@ -637,13 +640,6 @@ void readUSDist() {
   digitalWrite(US_OUT, HIGH);
   delayMicroseconds(10);
   digitalWrite(US_OUT, LOW);
-  /*
-  //uint32_t ms=millis();
-  uint32_t d=pulseIn(US_IN, HIGH, 25000);
-  if(!d) return;
-  //us_meas_dur = millis()-ms;
-  us_dist=(int16_t)(d/58);  
-  */
   us_dist=(int16_t)(pulseIn(US_IN, HIGH, 25000)/58);  
   if(!us_dist) {
     us_dist = tmp;
@@ -675,11 +671,17 @@ void readUSDist() {
       tmp=0;
       for(i=0; i<WALL_LOG_SZ; i++) if(logw[i].adv_k!=-127) tmp+=abs(logw[i].adv_k-logw[i].usd_k);
       tmp/=WALL_LOG_SZ; 
-        
-      us_dist_ver = 0;
-      //if(drv_dir[0]+drv_dir[1]==2 && tmp<4) us_dist_ver=us_dist; // verified dist // todo: add a check that the pows[] are comparable
-      if(tmp<4) us_dist_ver=us_dist; // verified dist // todo: add a check that the pows[] are comparable
-      // should also work good for minor angles
+              
+      if(tmp<4) { 
+        us_dist_ver=us_dist; // verified dist // todo: add a check that the pows[] are comparable )
+        bad_us_cnt=0;
+      }
+      else {
+        if(bad_us_cnt==0 && abs(logw[0].adv_k-logw[0].usd_k)>50) { // wild reflection ???
+          logw[0].usd_k=logw[1].usd_k; // use old val
+        } else us_dist_ver = 0;
+        bad_us_cnt++;        
+      }
       
   }
 }
