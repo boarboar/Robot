@@ -677,7 +677,8 @@ void readUSDist() {
         bad_us_cnt=0;
       }
       else {
-        if(bad_us_cnt==0 && abs(logw[0].adv_k-logw[0].usd_k)>50) { // wild reflection ???
+        //if(bad_us_cnt==0 && abs(logw[0].adv_k-logw[0].usd_k)>50) { // wild reflection ???
+        if(bad_us_cnt==0 && abs(logw[0].usd_k)>50) { // wild reflection ???
           logw[0].usd_k=logw[1].usd_k; // use old val
         } else us_dist_ver = 0;
         bad_us_cnt++;        
